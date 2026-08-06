@@ -269,7 +269,7 @@ body{
 .numpad-key-confirm[disabled]{background:var(--primary);opacity:.5;}
 
 /* 结束练习按钮置左 */
-.btn-end{padding:4px 10px;font-size:12px;border-radius:8px;}
+.btn-end{padding:6px 14px;font-size:13px;border-radius:8px;}
 
 /* ============ 固定题数列表 ============ */
 .fixed-list-card{padding:14px;}
