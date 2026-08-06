@@ -26,13 +26,15 @@
   /* ---------- 视图切换 ---------- */
   const titles = {
     home:'公考资料分析计算练习',
-    'basic-config':'基本计算 · 配置',
+    'basic-config':'基本计算',
     single:'单题练习',
     fixed:'固定题数练习',
     summary:'练习结算',
     history:'历史记录',
     'formula-menu':'公式计算',
-    'formula-detail':'公式练习'
+    'formula-detail':'公式练习',
+    'square-single':'平方数练习 · 单题',
+    'square-fixed':'平方数练习 · 固定题数'
   };
   function go(view){
     $$('.view').forEach(v=>v.classList.toggle('active', v.dataset.view===view));
@@ -142,6 +144,7 @@
   };
 
   function startSingle(){
+    lastPracticeSource = 'basic';
     single.questions = [];
     single.start = Date.now();
     single.timer = setInterval(tickSingle,200);
@@ -367,6 +370,7 @@
   };
 
   function startFixed(){
+    lastPracticeSource = 'basic';
     const n = cfg.count;
     fixed.questions = [];
     for(let i=0;i<n;i++){
@@ -452,11 +456,13 @@
   function stopAllTimers(){
     stopSingleTimers();
     stopFixedTimers();
+    stopAllSquareTimers();
   }
 
   /* ---------- 结算页 ---------- */
   let lastSummary = null;
   let lastConfigSnapshot = null;
+  let lastPracticeSource = 'basic';
 
   function showSummary(data, persist=true){
     lastSummary = data;
@@ -483,11 +489,13 @@
       row.className = 'detail-item ' + (ok?'ok':'err');
       const da = q.displayAnswer || String(q.answer);
       const ep = q.errorPct || '-';
+      const tm = q.usedSec !== undefined ? q.usedSec.toFixed(1)+'s' : '';
       row.innerHTML = `
         <span class="di-idx">${i+1}</span>
         <span class="di-q">${q.expr} = ${da}</span>
         <span class="di-a ${ok?'ok':'err'}">${ok?'✔':('✘ '+(q.userText||q.user||'空'))}</span>
         <span class="di-t">${ep}</span>
+        <span class="di-time">${tm}</span>
       `;
       detail.appendChild(row);
     });
@@ -570,19 +578,374 @@
     }, false);
   }
 
-  /* ---------- 公式计算（UI 占位） ---------- */
+  /* ---------- 公式计算（KaTeX 数学公式渲染） ---------- */
   const FORMULA_INFO = {
-    base:{title:'求基期', formula:'基期量 = 现期量 ÷ (1 + 增长率)'},
-    growth:{title:'求增长量', formula:'增长量 = 现期量 × 增长率 ÷ (1 + 增长率)'},
-    percent:{title:'百化分练习', formula:'如 1/2=50%  1/3≈33.3%  1/4=25%  1/8=12.5%'},
-    square:{title:'常见平方数', formula:'1² ~ 30² 速算记忆与练习'},
-    rate:{title:'求增长率', formula:'增长率 = 增长量 ÷ 基期量'}
+    base:{
+      title:'求基期',
+      formula:'\\text{基期量} = \\dfrac{\\text{现期量}}{1 + \\text{增长率}}',
+      desc:'已知现期量和增长率，求基期量'
+    },
+    growth:{
+      title:'求增长量',
+      formula:'\\text{增长量} = \\dfrac{\\text{现期量} \\times \\text{增长率}}{1 + \\text{增长率}}',
+      desc:'已知现期量和增长率，求增长量'
+    },
+    percent:{
+      title:'百化分练习',
+      formula:'\\dfrac{1}{2}=50\\% \\quad \\dfrac{1}{3}\\approx 33.3\\% \\quad \\dfrac{1}{4}=25\\% \\quad \\dfrac{1}{8}=12.5\\%',
+      desc:'常见百分数与分数的互化'
+    },
+    square:{
+      title:'平方数练习',
+      formula:'1² ~ 30² 速算记忆与练习',
+      desc:'1 到 30 的平方数快速反应'
+    },
+    rate:{
+      title:'求增长率',
+      formula:'\\text{增长率} = \\dfrac{\\text{增长量}}{\\text{基期量}}',
+      desc:'已知增长量和基期量，求增长率'
+    }
   };
   function openFormula(key){
     const info = FORMULA_INFO[key];
     $('#fdTitle').textContent = info.title;
-    $('#fdFormula').textContent = info.formula;
+    const el = $('#fdFormula');
+    // 平方数显示 1~30 平方数表
+    if(key === 'square'){
+      const cells = [];
+      for(let i=1;i<=30;i++){
+        cells.push(`<span>${i}²=${i*i}</span>`);
+      }
+      el.innerHTML = '<div class="square-table">'+cells.join('')+'</div>';
+    }else{
+      // 其他公式用 KaTeX 渲染
+      if(window.katex){
+        try{
+          katex.render(info.formula, el, {displayMode:true, throwOnError:false});
+        }catch(e){
+          el.textContent = info.formula;
+        }
+      }else{
+        el.textContent = info.formula;
+      }
+    }
+    // 更新描述文字
+    const desc = $('#fdDesc');
+    if(desc) desc.textContent = info.desc || '';
+    // 平方数显示配置区，其他公式显示占位
+    const sqCfg = $('#fdSquareConfig');
+    const ph = $('#fdPlaceholder');
+    if(key === 'square'){
+      sqCfg.style.display = '';
+      ph.style.display = 'none';
+      // 重置平方数配置提示
+      const tip = $('#sqCfgTip');
+      if(tip) tip.textContent = '';
+    }else{
+      sqCfg.style.display = 'none';
+      ph.style.display = '';
+    }
     go('formula-detail');
+  }
+
+  /* ---------- 平方数练习 ---------- */
+  const RANGE_MAP = {
+    '1-5':[1,2,3,4,5], '6-10':[6,7,8,9,10], '11-15':[11,12,13,14,15],
+    '16-20':[16,17,18,19,20], '21-25':[21,22,23,24,25], '26-30':[26,27,28,29,30]
+  };
+
+  const squareCfg = { ranges:[], mode:'single', count:5 };
+
+  function initSquareChips(){
+    const wrap = $('#squareRange');
+    if(!wrap) return;
+    wrap.addEventListener('click', e=>{
+      const b = e.target.closest('.chip'); if(!b) return;
+      const key = b.dataset.range;
+      const nums = RANGE_MAP[key];
+      if(!nums) return;
+      const arr = squareCfg.ranges;
+      // 检查是否已选中（交集）
+      const hasAll = nums.every(n=>arr.includes(n));
+      if(hasAll){
+        nums.forEach(n=>{ const i=arr.indexOf(n); if(i>=0) arr.splice(i,1); });
+        b.classList.remove('active');
+      }else{
+        nums.forEach(n=>{ if(!arr.includes(n)) arr.push(n); });
+        arr.sort((x,y)=>x-y);
+        b.classList.add('active');
+      }
+      updateSquareTip();
+    });
+  }
+
+  function updateSquareTip(){
+    const tip = $('#sqCfgTip');
+    if(!tip) return;
+    tip.textContent = squareCfg.ranges.length===0 ? '请至少选择一个数字范围' : '';
+  }
+
+  /* ---------- 平方数单题练习 ---------- */
+  const sqSingle = {
+    questions:[], cur:null, curStart:0, start:0,
+    timer:null, autoNextTimer:null,
+    revealing:false, paused:false, pauseStart:0, pausedTotal:0
+  };
+
+  function startSquareSingle(){
+    lastPracticeSource = 'square';
+    sqSingle.questions = [];
+    sqSingle.start = Date.now();
+    sqSingle.timer = setInterval(tickSqSingle, 200);
+    go('square-single');
+    nextSqSingle(true);
+  }
+
+  function tickSqSingle(){
+    const now = sqSingle.paused ? sqSingle.pauseStart : Date.now();
+    const elapsed = (now - sqSingle.start - sqSingle.pausedTotal)/1000;
+    $('#sqsTotalTime').textContent = fmtTime(elapsed);
+    const n = sqSingle.questions.length;
+    $('#sqsCount').textContent = n;
+    const correct = sqSingle.questions.filter(q=>q.correct).length;
+    const acc = n ? Math.round(correct/n*100) : 0;
+    $('#sqsAcc').textContent = acc+'%';
+    $('#sqsAvg').textContent = (n ? (elapsed/n).toFixed(1) : '0.0')+'s';
+    if(sqSingle.curStart){
+      const cur = (now - sqSingle.curStart - sqSingle.pausedTotal)/1000;
+      $('#sqsCur').textContent = Math.max(0,cur).toFixed(1)+'s';
+    }
+  }
+
+  function toggleSqPause(){
+    sqSingle.paused = !sqSingle.paused;
+    const btn = $('#sqsPause');
+    const inp = $('#sqsInput');
+    const numpadKeys = $$('.numpad-key', $('#sqsNumpad'));
+    if(sqSingle.paused){
+      sqSingle.pauseStart = Date.now();
+      btn.textContent = '继续';
+      btn.classList.add('paused');
+      inp.disabled = true;
+      numpadKeys.forEach(k=>k.disabled = true);
+      clearTimeout(sqSingle.autoNextTimer);
+    }else{
+      sqSingle.pausedTotal += Date.now() - sqSingle.pauseStart;
+      btn.textContent = '暂停';
+      btn.classList.remove('paused');
+      inp.disabled = false;
+      numpadKeys.forEach(k=>k.disabled = false);
+      inp.focus();
+    }
+  }
+
+  function nextSqSingle(isFirst){
+    if(sqSingle.paused) toggleSqPause();
+    // 未提交的当前题记为错误
+    if(!isFirst && sqSingle.cur){
+      sqSingle.questions.push({
+        number: sqSingle.cur,
+        answer: sqSingle.cur * sqSingle.cur,
+        user: '', correct: false,
+        usedSec: (Date.now()-sqSingle.curStart)/1000
+      });
+    }
+    clearTimeout(sqSingle.autoNextTimer);
+    sqSingle.revealing = false;
+    // 从选中范围中随机选数，避免连续重复
+    const pool = squareCfg.ranges;
+    if(pool.length===0) return;
+    let next;
+    if(pool.length>1 && sqSingle.cur !== null){
+      const filtered = pool.filter(n=>n!==sqSingle.cur);
+      next = filtered[rand(0, filtered.length-1)];
+    }else{
+      next = pool[rand(0, pool.length-1)];
+    }
+    sqSingle.cur = next;
+    sqSingle.curStart = Date.now();
+    $('#sqsIndex').textContent = `第 ${sqSingle.questions.length+1} 题`;
+    $('#sqsExpr').textContent = next + '² = ?';
+    $('#sqsInput').value = '';
+    $('#sqsInput').disabled = false;
+    $$('.numpad-key', $('#sqsNumpad')).forEach(k=>k.disabled = false);
+    $('#sqsFeedback').className = 'feedback';
+    $('#sqsFeedback').textContent = '';
+    $('#sqsInput').focus();
+  }
+
+  function submitSqSingle(){
+    if(!sqSingle.cur || sqSingle.paused) return;
+    if(sqSingle.revealing){ nextSqSingle(); return; }
+    const raw = $('#sqsInput').value.trim();
+    if(raw===''){ flashSqFeedback('err','请输入答案'); return; }
+    const user = parseInt(raw, 10);
+    const correct = user === sqSingle.cur * sqSingle.cur;
+    const usedSec = (Date.now()-sqSingle.curStart)/1000;
+    if(correct){
+      $('#sqsFeedback').className = 'feedback ok';
+      $('#sqsFeedback').textContent = '✓ 正确';
+      sqSingle.questions.push({
+        number: sqSingle.cur, answer: sqSingle.cur*sqSingle.cur,
+        user, correct: true, usedSec
+      });
+      sqSingle.cur = null;
+      $('#sqsInput').disabled = true;
+      $$('.numpad-key', $('#sqsNumpad')).forEach(k=>k.disabled = true);
+      sqSingle.autoNextTimer = setTimeout(()=>nextSqSingle(), 300);
+    }else{
+      $('#sqsFeedback').className = 'feedback err';
+      $('#sqsFeedback').textContent = `✗ 错误，正确答案：${sqSingle.cur*sqSingle.cur}`;
+      sqSingle.questions.push({
+        number: sqSingle.cur, answer: sqSingle.cur*sqSingle.cur,
+        user, correct: false, usedSec
+      });
+      sqSingle.cur = null;
+      $('#sqsInput').disabled = true;
+      $$('.numpad-key', $('#sqsNumpad')).forEach(k=>k.disabled = true);
+      sqSingle.autoNextTimer = setTimeout(()=>nextSqSingle(), 1200);
+    }
+  }
+
+  function revealSqSingle(){
+    if(!sqSingle.cur || sqSingle.paused) return;
+    sqSingle.revealing = true;
+    const ans = sqSingle.cur * sqSingle.cur;
+    $('#sqsFeedback').className = 'feedback info';
+    $('#sqsFeedback').textContent = `答案：${ans}（点击"跳过"继续）`;
+    $('#sqsInput').disabled = true;
+    $$('.numpad-key', $('#sqsNumpad')).forEach(k=>k.disabled = true);
+    sqSingle.questions.push({
+      number: sqSingle.cur, answer: ans,
+      user: '(查看答案)', correct: false,
+      usedSec: (Date.now()-sqSingle.curStart)/1000
+    });
+    sqSingle.cur = null;
+  }
+
+  function endSqSingle(){
+    if(sqSingle.paused) toggleSqPause();
+    sqSingle.cur = null;
+    stopSqSingleTimers();
+    showSummary({
+      type:'平方数练习（单题）',
+      questions: sqSingle.questions.map(q=>({
+        expr: q.number+'²', answer: q.answer,
+        displayAnswer: String(q.answer), errorPct: '-',
+        userText: String(q.user), correct: q.correct, usedSec: q.usedSec
+      })),
+      totalSec: (Date.now()-sqSingle.start)/1000
+    });
+  }
+
+  function stopSqSingleTimers(){
+    clearInterval(sqSingle.timer); sqSingle.timer=null;
+    clearTimeout(sqSingle.autoNextTimer); sqSingle.autoNextTimer=null;
+  }
+
+  function flashSqFeedback(type, msg){
+    $('#sqsFeedback').className = 'feedback '+type;
+    $('#sqsFeedback').textContent = msg;
+  }
+
+  /* ---------- 平方数固定题数练习 ---------- */
+  const sqFixed = { questions:[], start:0, timer:null };
+
+  function startSquareFixed(){
+    lastPracticeSource = 'square';
+    const n = squareCfg.count;
+    const pool = squareCfg.ranges;
+    if(pool.length===0) return;
+    sqFixed.questions = [];
+    // 生成题目，避免相邻重复
+    let last = null;
+    for(let i=0;i<n;i++){
+      let num;
+      if(pool.length>1 && last !== null){
+        const f = pool.filter(x=>x!==last);
+        num = f[rand(0, f.length-1)];
+      }else{
+        num = pool[rand(0, pool.length-1)];
+      }
+      sqFixed.questions.push({ number:num, answer:num*num, user:'', correct:false, usedSec:0 });
+      last = num;
+    }
+    sqFixed.start = Date.now();
+    const list = $('#sqfList');
+    list.innerHTML = '';
+    sqFixed.questions.forEach((q,i)=>{
+      const item = document.createElement('div');
+      item.className = 'fixed-item';
+      item.innerHTML = `
+        <span class="fi-idx">${i+1}</span>
+        <span class="fi-expr">${q.number}² <span class="eq">=</span></span>
+        <input class="fi-input" inputmode="numeric" autocomplete="off" data-i="${i}" placeholder="?" />
+      `;
+      list.appendChild(item);
+    });
+    list.addEventListener('input', onSqFixedInput);
+    $('#sqfCount').textContent = n;
+    sqFixed.timer = setInterval(tickSqFixed, 200);
+    go('square-fixed');
+    const first = $('.fi-input', list);
+    if(first) first.focus();
+  }
+
+  function onSqFixedInput(e){
+    const inp = e.target.closest('.fi-input'); if(!inp) return;
+    const i = +inp.dataset.i;
+    const item = inp.closest('.fixed-item');
+    const val = inp.value.trim();
+    sqFixed.questions[i].user = val;
+    if(val===''){ item.classList.remove('done'); return; }
+    item.classList.add('done');
+    $('#sqfDone').textContent = sqFixed.questions.filter(q=>q.user!=='').length;
+  }
+
+  function tickSqFixed(){
+    const total = (Date.now()-sqFixed.start)/1000;
+    $('#sqfTotalTime').textContent = fmtTime(total);
+    $('#sqfDone').textContent = sqFixed.questions.filter(q=>q.user!=='').length;
+  }
+
+  function submitSqFixed(){
+    const totalSec = (Date.now()-sqFixed.start)/1000;
+    const per = sqFixed.questions.length ? totalSec/sqFixed.questions.length : 0;
+    sqFixed.questions.forEach(q=>{
+      const u = q.user==='' ? null : parseInt(q.user,10);
+      if(u !== null){
+        q.correct = u === q.answer;
+        q.userText = String(u);
+      }else{
+        q.correct = false;
+        q.userText = '未填';
+      }
+      q.usedSec = per;
+    });
+    stopSqFixedTimers();
+    showSummary({
+      type:'平方数练习（固定题数）',
+      questions: sqFixed.questions.map(q=>({
+        expr: q.number+'²', answer: q.answer,
+        displayAnswer: String(q.answer), errorPct: '-',
+        userText: q.userText, correct: q.correct, usedSec: q.usedSec
+      })),
+      totalSec
+    });
+  }
+
+  function abortSqFixed(){
+    stopSqFixedTimers();
+    go('home');
+  }
+
+  function stopSqFixedTimers(){
+    clearInterval(sqFixed.timer); sqFixed.timer=null;
+  }
+
+  function stopAllSquareTimers(){
+    stopSqSingleTimers();
+    stopSqFixedTimers();
   }
 
   /* ---------- 事件绑定 ---------- */
@@ -598,6 +961,22 @@
     initChips('cfgB','bDigits');
     initSegs('cfgMode','mode',false);
     initSegs('cfgCount','count',true);
+
+    // 手动修改配置时取消快速配置选中状态（排除题型类别和题目数量）
+    function clearQuickPreset(){
+      $$('.quick-chip.active').forEach(c=>c.classList.remove('active'));
+    }
+    const mainCard = $('.cfg-main-card');
+    if(mainCard){
+      mainCard.addEventListener('click', e=>{
+        const t = e.target.closest('.chip,.seg');
+        if(t && !t.classList.contains('quick-chip')){
+          // 排除 cfgMode 和 cfgCount 区域
+          const wrap = t.closest('#cfgMode,#cfgCount');
+          if(!wrap) clearQuickPreset();
+        }
+      });
+    }
 
     // 快速配置预设
     function applyPreset(ops, aDigits, bDigits){
@@ -686,7 +1065,13 @@
 
     // 固定题数
     $('#fixedConfirm').addEventListener('click', submitFixed);
-    $('#fixedEnd').addEventListener('click', abortFixed);
+    $('#fixedEnd').addEventListener('click', submitFixed);
+
+    // 结算页返回按钮
+    $('#sumBack').addEventListener('click', ()=>{
+      if(lastPracticeSource === 'square') openFormula('square');
+      else go('basic-config');
+    });
 
     // 结算页再来一次（按上次配置）
     $('#sumAgain').addEventListener('click', ()=>{
@@ -724,6 +1109,74 @@
     $$('[data-formula]').forEach(b=>{
       b.addEventListener('click', ()=>openFormula(b.dataset.formula));
     });
+
+    // ---------- 平方数配置 ----------
+    initSquareChips();
+    // 绑定 sqMode 到 squareCfg
+    (function(){
+      const wrap = $('#sqMode');
+      if(!wrap) return;
+      wrap.addEventListener('click', e=>{
+        const b = e.target.closest('.seg'); if(!b) return;
+        $$('.seg',wrap).forEach(x=>x.classList.remove('active'));
+        b.classList.add('active');
+        squareCfg.mode = b.dataset.val;
+        const cw = $('#sqFixedCountWrap');
+        if(cw) cw.style.display = squareCfg.mode==='fixed' ? '' : 'none';
+      });
+    })();
+    // 重新绑定 sqCount
+    (function(){
+      const wrap = $('#sqCount');
+      if(!wrap) return;
+      wrap.addEventListener('click', e=>{
+        const b = e.target.closest('.seg'); if(!b) return;
+        $$('.seg',wrap).forEach(x=>x.classList.remove('active'));
+        b.classList.add('active');
+        squareCfg.count = +b.dataset.val;
+      });
+    })();
+
+    // 平方数开始练习
+    $('#startSquare').addEventListener('click', ()=>{
+      if(squareCfg.ranges.length===0){
+        updateSquareTip();
+        return;
+      }
+      if(squareCfg.mode==='single') startSquareSingle();
+      else startSquareFixed();
+    });
+
+    // 平方数单题
+    $('#sqsPause').addEventListener('click', toggleSqPause);
+    $('#sqsNext').addEventListener('click', ()=>nextSqSingle());
+    $('#sqsReveal').addEventListener('click', revealSqSingle);
+    $('#sqsEnd').addEventListener('click', endSqSingle);
+    $('#sqsInput').addEventListener('keydown', e=>{
+      if(e.key==='Enter' && !sqSingle.paused){ e.preventDefault(); submitSqSingle(); }
+    });
+    $('#sqsInput').addEventListener('input', function(){
+      this.value = this.value.replace(/\D/g, '');
+    });
+    // 平方数数字软键盘
+    $('#sqsNumpad').addEventListener('click', e=>{
+      const key = e.target.closest('.numpad-key');
+      if(!key || key.disabled) return;
+      const val = key.dataset.key;
+      if(val === 'confirm'){ submitSqSingle(); return; }
+      if(val === 'clear'){ $('#sqsInput').value = ''; return; }
+      if(val === 'backspace'){
+        const inp = $('#sqsInput');
+        inp.value = inp.value.slice(0, -1);
+        return;
+      }
+      const inp = $('#sqsInput');
+      inp.value += val;
+    });
+
+    // 平方数固定题数
+    $('#sqfConfirm').addEventListener('click', submitSqFixed);
+    $('#sqfEnd').addEventListener('click', submitSqFixed);
   }
 
   /* ---------- 启动 ---------- */
@@ -731,6 +1184,7 @@
     try{
       bind();
       updateCfgTip();
+      updateSquareTip();
       go('home');
     }catch(err){
       console.error(err);
