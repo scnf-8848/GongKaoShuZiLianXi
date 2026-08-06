@@ -134,24 +134,24 @@ body{
 .cfg-op-col{display:flex;flex-direction:column;align-items:center;}
 .cfg-op-col .cfg-label{text-align:center;}
 .op-grid{
-  display:grid;grid-template-columns:repeat(2,60px);
-  grid-template-rows:repeat(2,60px);gap:8px;
-  background:#f7f9fd;border:1px solid var(--line);border-radius:12px;
-  padding:8px;
+  display:grid;grid-template-columns:repeat(2,48px);
+  grid-template-rows:repeat(2,48px);gap:6px;
+  background:#f7f9fd;border:1px solid var(--line);border-radius:10px;
+  padding:6px;
 }
 @media(max-width:520px){
   .op-grid{grid-template-columns:repeat(4,1fr);grid-template-rows:auto;}
 }
 .op-grid .op-chip{
-  padding:0;border-radius:12px;font-size:20px;font-weight:700;
+  padding:0;border-radius:10px;font-size:15px;font-weight:600;
   display:flex;align-items:center;justify-content:center;
   border-color:transparent;background:#fff;
 }
 .op-grid .op-chip.active{
   background:var(--primary);border-color:var(--primary);
 }
-/* 题型类别：压缩宽度 */
-.seg-row-compact{max-width:320px;margin:0 auto;}
+/* 题型类别：压缩宽度，左对齐 */
+.seg-row-compact{justify-content:flex-start;}
 .seg-row-compact .seg{flex:0 0 auto;min-width:100px;}
 
 /* 单按钮动作区 */
@@ -159,20 +159,31 @@ body{
 
 /* 返回按钮（卡片内小按钮） */
 .back-btn-sm{
-  padding:4px 10px;font-size:12px;margin-bottom:6px;border-radius:8px;
+  padding:4px 10px;font-size:12px;border-radius:8px;
 }
 
-/* 快速配置网格：每行两个 */
-.cfg-row{display:flex;gap:14px;align-items:flex-start;}
-.cfg-quick-card{min-width:200px;max-width:260px;flex-shrink:0;}
-.cfg-main-card{flex:1;min-width:0;}
-@media(max-width:640px){
-  .cfg-row{flex-direction:column;}
-  .cfg-quick-card{max-width:100%;min-width:0;}
+/* 配置页标题与返回按钮同行（标题绝对居中） */
+.cfg-header{
+  display:flex;align-items:center;justify-content:center;margin-bottom:10px;position:relative;
+  min-height:30px;
 }
-.quick-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;}
+.cfg-header .back-btn-sm{
+  position:absolute;left:0;top:50%;transform:translateY(-50%);
+}
+.cfg-header h2,.cfg-header #fdTitle{
+  margin:0;font-size:18px;text-align:center;
+}
+
+/* 快速配置网格：主区居中 */
+.cfg-row{display:flex;justify-content:center;}
+.cfg-main-card{flex:0 1 auto;min-width:0;max-width:620px;width:100%;}
+@media(max-width:640px){
+  .cfg-main-card{max-width:100%;}
+  .quick-grid{grid-template-columns:1fr 1fr;}
+}
+.quick-grid{display:grid;grid-template-columns:1fr 1fr;gap:4px;}
 .quick-chip{
-  padding:7px 4px;font-size:12px;border-radius:10px;text-align:center;
+  padding:5px 3px;font-size:11px;border-radius:7px;text-align:center;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
   border:1px solid var(--line);background:#f7f9fd;color:var(--ink);
   cursor:pointer;transition:all .12s;font-weight:500;
@@ -181,6 +192,9 @@ body{
 .quick-chip.active{
   background:var(--primary);color:#fff;border-color:var(--primary);
 }
+/* 内嵌快速配置（中间列） */
+.quick-embed{width:100%;margin-top:10px;}
+.quick-embed .cfg-label{margin-bottom:6px;}
 
 /* ============ 统计条 ============ */
 .stats-bar{
@@ -259,19 +273,18 @@ body{
 /* ============ 固定题数列表 ============ */
 .fixed-list-card{padding:14px;}
 .fixed-list{display:grid;grid-template-columns:1fr;gap:10px;margin-bottom:14px;}
-@media(min-width:560px){.fixed-list{grid-template-columns:1fr 1fr;}}
 .fixed-item{
   border:1px solid var(--line);border-radius:10px;padding:10px;
-  display:flex;align-items:center;gap:8px;background:#fbfcfe;
+  display:flex;align-items:center;gap:4px;background:#fbfcfe;
 }
 .fixed-item .fi-idx{
   width:24px;height:24px;border-radius:6px;background:var(--primary);color:#fff;
   font-size:12px;display:flex;align-items:center;justify-content:center;flex-shrink:0;
 }
-.fixed-item .fi-expr{flex:1;font-size:16px;font-weight:600;}
+.fixed-item .fi-expr{flex:0 0 60px;font-size:16px;font-weight:600;}
 .fixed-item .fi-expr .eq{color:var(--muted);}
 .fixed-item .fi-input{
-  width:84px;font-size:16px;padding:6px 4px;text-align:center;
+  width:70px;font-size:16px;padding:6px 4px;text-align:center;
   border:1px solid var(--line);border-radius:8px;outline:none;
 }
 .fixed-item .fi-input:focus{border-color:var(--primary);}
@@ -290,17 +303,18 @@ body{
 .sum-v{display:block;font-size:20px;font-weight:700;color:var(--primary);margin-top:4px;}
 .detail-list{display:flex;flex-direction:column;gap:8px;}
 .detail-item{
-  display:grid;grid-template-columns:auto auto auto auto;gap:10px;align-items:center;
+  display:grid;grid-template-columns:auto auto auto auto auto;gap:8px;align-items:center;
   padding:9px 10px;border-radius:10px;font-size:14px;justify-content:start;
 }
 .detail-item.ok{background:var(--ok-bg);}
 .detail-item.err{background:var(--err-bg);}
 .di-idx{font-size:12px;color:var(--muted);width:24px;}
-.di-q{font-weight:600;}
-.di-a{font-weight:600;}
+.di-q{font-weight:600;font-size:13px;}
+.di-a{font-weight:600;font-size:13px;}
 .di-a.ok{color:var(--ok);}
 .di-a.err{color:var(--err);}
-.di-t{font-size:12px;color:var(--muted);min-width:46px;text-align:right;}
+.di-t{font-size:11px;color:var(--muted);min-width:40px;text-align:right;}
+.di-time{font-size:11px;color:var(--muted);min-width:40px;text-align:right;}
 .di-correct{font-size:12px;color:var(--muted);}
 
 /* ============ 历史记录 ============ */
@@ -320,9 +334,40 @@ body{
 /* ============ 公式计算 ============ */
 .formula-box{
   background:#f7f9fd;border:1px dashed var(--line);border-radius:10px;
-  padding:12px;text-align:center;font-size:15px;color:var(--primary);
-  margin:10px 0 14px;font-weight:600;
+  padding:18px 12px;text-align:center;font-size:15px;color:var(--primary);
+  margin:10px 0 6px;font-weight:600;min-height:60px;
+  display:flex;align-items:center;justify-content:center;
+  overflow-x:auto;
 }
+.formula-box .katex{font-size:1.25em;}
+.formula-desc{text-align:center;margin:0 0 6px;font-size:13px;}
 .placeholder{text-align:center;padding:18px 10px;}
 .ph-icon{font-size:38px;display:block;margin-bottom:6px;}
 .back-btn{margin-bottom:8px;}
+
+/* 平方数范围选择网格 */
+.square-range-grid{
+  display:grid;
+  grid-template-columns:repeat(3,1fr);
+  gap:6px;
+}
+.square-range-grid .chip{
+  text-align:center;
+}
+@media(max-width:480px){
+  .square-range-grid{grid-template-columns:repeat(2,1fr);}
+}
+
+/* 1~30 平方数表 */
+.square-table{
+  display:grid;
+  grid-template-columns:repeat(5,1fr);
+  gap:4px 8px;
+  font-size:12px;line-height:1.7;color:var(--ink);font-weight:400;
+  text-align:center;font-family:monospace;
+}
+
+/* 平方数键盘确认按钮独占一行 */
+.numpad-key.sq-confirm{
+  grid-column:1 / -1;
+}
