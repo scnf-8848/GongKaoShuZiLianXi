@@ -307,6 +307,7 @@ body{
   display:grid;grid-template-columns:auto auto auto auto auto;gap:8px;align-items:center;
   padding:9px 10px;border-radius:10px;font-size:14px;justify-content:start;
 }
+.detail-item.no-time{grid-template-columns:auto auto auto auto;}
 .detail-item.ok{background:var(--ok-bg);}
 .detail-item.err{background:var(--err-bg);}
 .di-idx{font-size:12px;color:var(--muted);width:24px;}
