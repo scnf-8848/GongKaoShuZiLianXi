@@ -140,7 +140,8 @@ body{
   padding:6px;
 }
 @media(max-width:520px){
-  .op-grid{grid-template-columns:repeat(4,1fr);grid-template-rows:auto;}
+  .op-grid{grid-template-columns:repeat(4,1fr);grid-template-rows:auto;padding:8px;gap:8px;width:100%;}
+  .op-grid .op-chip{min-height:44px;font-size:18px;}
 }
 .op-grid .op-chip{
   padding:0;border-radius:10px;font-size:15px;font-weight:600;
@@ -281,7 +282,7 @@ body{
   width:24px;height:24px;border-radius:6px;background:var(--primary);color:#fff;
   font-size:12px;display:flex;align-items:center;justify-content:center;flex-shrink:0;
 }
-.fixed-item .fi-expr{flex:0 0 60px;font-size:16px;font-weight:600;}
+.fixed-item .fi-expr{flex:0 1 auto;font-size:16px;font-weight:600;white-space:nowrap;}
 .fixed-item .fi-expr .eq{color:var(--muted);}
 .fixed-item .fi-input{
   width:70px;font-size:16px;padding:6px 4px;text-align:center;
