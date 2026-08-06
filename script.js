@@ -10,6 +10,7 @@
   const $$ = (s,r=document)=>Array.from(r.querySelectorAll(s));
   const rand = (min,max)=>Math.floor(Math.random()*(max-min+1))+min;
   const LS_KEY = 'gk_calc_records_v1';
+  const isTouchDevice = ()=>'ontouchstart' in window || navigator.maxTouchPoints > 0;
 
   function fmtTime(sec){
     sec = Math.max(0,Math.floor(sec));
@@ -39,6 +40,8 @@
   function go(view){
     $$('.view').forEach(v=>v.classList.toggle('active', v.dataset.view===view));
     $('#topbarTitle').textContent = titles[view]||'公考资料分析计算练习';
+    // 仅在首页显示顶栏
+    $('header.topbar').style.display = view==='home' ? '' : 'none';
     window.scrollTo({top:0,behavior:'instant'});
     // 视图进入钩子
     if(view==='history') renderHistory();
@@ -188,8 +191,9 @@
       btn.textContent = '暂停';
       btn.classList.remove('paused');
       inp.disabled = false;
+      inp.readOnly = isTouchDevice();
       numpadKeys.forEach(k=>k.disabled = false);
-      inp.focus();
+      if(!isTouchDevice()) inp.focus();
     }
   }
 
@@ -213,11 +217,11 @@
     $('#singleExpr').textContent = single.cur.expr + ' = ?';
     $('#singleInput').value = '';
     $('#singleInput').disabled = false;
+    $('#singleInput').readOnly = isTouchDevice();
     $$('.numpad-key').forEach(k=>k.disabled = false);
     $('#singleFeedback').className = 'feedback';
     $('#singleFeedback').textContent = '';
-    // 移动端不自动聚焦，避免调起系统键盘遮挡软键盘
-    if(window.innerWidth > 768) $('#singleInput').focus();
+    if(!isTouchDevice()) $('#singleInput').focus();
   }
 
   function submitSingle(){
@@ -483,20 +487,22 @@
     $('#sumAvg').textContent = avg.toFixed(1)+'s';
 
     const detail = $('#sumDetail');
+    const isFixed = data.type.includes('固定题数');
+    detail.className = 'detail-list' + (isFixed ? ' no-time' : '');
     detail.innerHTML = '';
     qs.forEach((q,i)=>{
       const ok = q.correct;
       const row = document.createElement('div');
-      row.className = 'detail-item ' + (ok?'ok':'err');
+      row.className = 'detail-item ' + (ok?'ok':'err') + (isFixed?' no-time':'');
       const da = q.displayAnswer || String(q.answer);
       const ep = q.errorPct || '-';
-      const tm = q.usedSec !== undefined ? q.usedSec.toFixed(1)+'s' : '';
+      const tm = (!isFixed && q.usedSec !== undefined) ? q.usedSec.toFixed(1)+'s' : '';
       row.innerHTML = `
         <span class="di-idx">${i+1}</span>
         <span class="di-q">${q.expr} = ${da}</span>
         <span class="di-a ${ok?'ok':'err'}">${ok?'✔':('✘ '+(q.userText||q.user||'空'))}</span>
         <span class="di-t">${ep}</span>
-        <span class="di-time">${tm}</span>
+        ${isFixed ? '' : `<span class="di-time">${tm}</span>`}
       `;
       detail.appendChild(row);
     });
@@ -735,8 +741,9 @@
       btn.textContent = '暂停';
       btn.classList.remove('paused');
       inp.disabled = false;
+      inp.readOnly = isTouchDevice();
       numpadKeys.forEach(k=>k.disabled = false);
-      inp.focus();
+      if(!isTouchDevice()) inp.focus();
     }
   }
 
@@ -769,11 +776,11 @@
     $('#sqsExpr').textContent = next + '² = ?';
     $('#sqsInput').value = '';
     $('#sqsInput').disabled = false;
+    $('#sqsInput').readOnly = isTouchDevice();
     $$('.numpad-key', $('#sqsNumpad')).forEach(k=>k.disabled = false);
     $('#sqsFeedback').className = 'feedback';
     $('#sqsFeedback').textContent = '';
-    // 移动端不自动聚焦，避免调起系统键盘遮挡软键盘
-    if(window.innerWidth > 768) $('#sqsInput').focus();
+    if(!isTouchDevice()) $('#sqsInput').focus();
   }
 
   function submitSqSingle(){
