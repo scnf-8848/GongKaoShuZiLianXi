@@ -216,7 +216,8 @@
     $$('.numpad-key').forEach(k=>k.disabled = false);
     $('#singleFeedback').className = 'feedback';
     $('#singleFeedback').textContent = '';
-    $('#singleInput').focus();
+    // 移动端不自动聚焦，避免调起系统键盘遮挡软键盘
+    if(window.innerWidth > 768) $('#singleInput').focus();
   }
 
   function submitSingle(){
@@ -771,7 +772,8 @@
     $$('.numpad-key', $('#sqsNumpad')).forEach(k=>k.disabled = false);
     $('#sqsFeedback').className = 'feedback';
     $('#sqsFeedback').textContent = '';
-    $('#sqsInput').focus();
+    // 移动端不自动聚焦，避免调起系统键盘遮挡软键盘
+    if(window.innerWidth > 768) $('#sqsInput').focus();
   }
 
   function submitSqSingle(){
