@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>公考资料分析计算练习工具</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <h1 class="topbar-title" id="topbarTitle">公考资料分析计算练习</h1>
+  </header>
+
+  <main class="app" id="app">
+
+    <!-- ============ 首页 ============ -->
+    <section class="view view-home active" data-view="home">
+      <div class="card hero">
+        <h2>选择练习类别</h2>
+        <p class="muted">通过高频计算训练，提升资料分析答题速度与准确率</p>
+      </div>
+      <div class="grid-2">
+        <button class="card pick" data-go="basic-config">
+          <span class="pick-emoji">➗</span>
+          <span class="pick-title">基本计算</span>
+          <span class="pick-desc">加 减 乘 除 · 自定义位数</span>
+        </button>
+        <button class="card pick" data-go="formula-menu">
+          <span class="pick-emoji">∑</span>
+          <span class="pick-title">公式计算</span>
+          <span class="pick-desc">基期 · 增长量 · 增长率</span>
+        </button>
+      </div>
+      <div class="card quick-actions">
+        <button class="btn btn-line" data-go="history">查看历史记录</button>
+      </div>
+    </section>
+
+    <!-- ============ 基本计算 - 配置 ============ -->
+    <section class="view" data-view="basic-config">
+      <div class="cfg-row">
+        <div class="card cfg-quick-card">
+          <label class="cfg-label">快速配置</label>
+          <div class="quick-grid" id="quickPresets">
+            <button class="chip quick-chip" data-ops='["add"]' data-a='["3"]' data-b='["3"]'>三位数加法</button>
+            <button class="chip quick-chip" data-ops='["sub"]' data-a='["3"]' data-b='["3"]'>三位数减法</button>
+            <button class="chip quick-chip" data-ops='["add","sub"]' data-a='["3"]' data-b='["3"]'>三位数加减</button>
+            <button class="chip quick-chip" data-ops='["mul"]' data-a='["2"]' data-b='["1"]'>两位数×一位数</button>
+            <button class="chip quick-chip" data-ops='["mul"]' data-a='["2"]' data-b='["2"]'>两位数×两位数</button>
+            <button class="chip quick-chip" data-ops='["mul"]' data-a='["3"]' data-b='["1"]'>三位数×一位数</button>
+            <button class="chip quick-chip" data-ops='["mul"]' data-a='["3"]' data-b='["2"]'>三位数×两位数</button>
+            <button class="chip quick-chip" data-ops='["mul"]' data-a='["3"]' data-b='["3"]'>三位数×三位数</button>
+            <button class="chip quick-chip" data-ops='["div"]' data-a='["3"]' data-b='["1"]'>三位数÷一位数</button>
+            <button class="chip quick-chip" data-ops='["div"]' data-a='["3"]' data-b='["2"]'>三位数÷两位数</button>
+            <button class="chip quick-chip" data-ops='["div"]' data-a='["3"]' data-b='["3"]'>三位数÷三位数</button>
+            <button class="chip quick-chip" data-ops='["div"]' data-a='["5"]' data-b='["3"]'>五位数÷三位数</button>
+          </div>
+        </div>
+        <div class="card cfg-main-card">
+          <button class="btn btn-line back-btn-sm" data-go="home">← 返回</button>
+          <h2>基本计算 · 配置</h2>
+          <div class="cfg-formula-row">
+            <div class="cfg-group cfg-digit-col">
+              <label class="cfg-label">第一个数（多选）</label>
+              <div class="digit-list" id="cfgA">
+                <button class="chip" data-val="1">一位数</button>
+                <button class="chip" data-val="2">两位数</button>
+                <button class="chip" data-val="3">三位数</button>
+                <button class="chip" data-val="4">四位数</button>
+                <button class="chip" data-val="5">五位数</button>
+              </div>
+            </div>
+            <div class="cfg-group cfg-op-col">
+              <label class="cfg-label">计算类别（多选）</label>
+              <div class="op-grid" id="cfgOps">
+                <button class="chip op-chip" data-val="add">加</button>
+                <button class="chip op-chip" data-val="sub">减</button>
+                <button class="chip op-chip" data-val="mul">乘</button>
+                <button class="chip op-chip" data-val="div">除</button>
+              </div>
+            </div>
+            <div class="cfg-group cfg-digit-col">
+              <label class="cfg-label">第二个数（多选）</label>
+              <div class="digit-list" id="cfgB">
+                <button class="chip" data-val="1">一位数</button>
+                <button class="chip" data-val="2">两位数</button>
+                <button class="chip" data-val="3">三位数</button>
+                <button class="chip" data-val="4">四位数</button>
+                <button class="chip" data-val="5">五位数</button>
+              </div>
+            </div>
+          </div>
+          <div class="cfg-group">
+            <label class="cfg-label">题型类别</label>
+            <div class="seg-row seg-row-compact" id="cfgMode">
+              <button class="seg active" data-val="single">单题练习</button>
+              <button class="seg" data-val="fixed">固定题数</button>
+            </div>
+          </div>
+          <div class="cfg-group" id="fixedCountWrap" style="display:none;">
+            <label class="cfg-label">题目数量</label>
+            <div class="seg-row" id="cfgCount">
+              <button class="seg active" data-val="5">5 题</button>
+              <button class="seg" data-val="10">10 题</button>
+              <button class="seg" data-val="15">15 题</button>
+              <button class="seg" data-val="20">20 题</button>
+            </div>
+          </div>
+          <div class="cfg-actions cfg-actions-single">
+            <button class="btn btn-primary" id="startBasic">开始练习</button>
+          </div>
+          <p class="muted cfg-tip" id="cfgTip"></p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 单题练习 ============ -->
+    <section class="view" data-view="single">
+      <div class="stats-bar">
+        <div class="stat"><span class="stat-k">总时长</span><span class="stat-v" id="sTotalTime">00:00</span></div>
+        <div class="stat"><span class="stat-k">题数</span><span class="stat-v" id="sCount">0</span></div>
+        <div class="stat"><span class="stat-k">正确率</span><span class="stat-v" id="sAcc">0%</span></div>
+        <div class="stat"><span class="stat-k">均/题</span><span class="stat-v" id="sAvg">0.0s</span></div>
+        <div class="stat"><span class="stat-k">本题</span><span class="stat-v" id="sCur">0.0s</span></div>
+      </div>
+
+      <div class="card question-card">
+        <div class="q-header">
+          <button class="btn btn-danger-ghost btn-end" id="singleEnd">结束练习</button>
+          <div class="q-index" id="singleIndex">第 1 题</div>
+          <button class="btn btn-pause" id="singlePause">暂停</button>
+        </div>
+        <div class="q-expr" id="singleExpr">—</div>
+        <div class="answer-row">
+          <input type="text" inputmode="numeric" id="singleInput" class="answer-input" placeholder="输入答案后回车" autocomplete="off" />
+        </div>
+        <div class="feedback" id="singleFeedback"></div>
+        <div class="btn-row">
+          <button class="btn btn-line" id="singleNext">跳过</button>
+          <button class="btn btn-line" id="singleReveal">查看答案</button>
+        </div>
+        <div class="numpad" id="numpad">
+          <div class="numpad-grid">
+            <button class="numpad-key" data-key="1">1</button>
+            <button class="numpad-key" data-key="2">2</button>
+            <button class="numpad-key" data-key="3">3</button>
+            <button class="numpad-key" data-key="4">4</button>
+            <button class="numpad-key" data-key="5">5</button>
+            <button class="numpad-key" data-key="6">6</button>
+            <button class="numpad-key" data-key="7">7</button>
+            <button class="numpad-key" data-key="8">8</button>
+            <button class="numpad-key" data-key="9">9</button>
+            <button class="numpad-key" data-key=".">.</button>
+            <button class="numpad-key" data-key="0">0</button>
+            <button class="numpad-key" data-key="backspace">←</button>
+            <button class="numpad-key numpad-key-clear" data-key="clear">清空</button>
+            <button class="numpad-key numpad-key-confirm" data-key="confirm">确认</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 固定题数练习 ============ -->
+    <section class="view" data-view="fixed">
+      <div class="stats-bar">
+        <div class="stat"><span class="stat-k">总时长</span><span class="stat-v" id="fTotalTime">00:00</span></div>
+        <div class="stat"><span class="stat-k">题数</span><span class="stat-v" id="fCount">0</span></div>
+        <div class="stat"><span class="stat-k">已答</span><span class="stat-v" id="fDone">0</span></div>
+      </div>
+      <div class="card fixed-list-card">
+        <div class="fixed-list" id="fixedList"></div>
+        <div class="btn-row">
+          <button class="btn btn-primary" id="fixedConfirm">提交结算</button>
+          <button class="btn btn-danger-ghost" id="fixedEnd">放弃结束</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 结算页 ============ -->
+    <section class="view" data-view="summary">
+      <div class="card">
+        <h2 id="sumTitle">练习结算</h2>
+        <div class="sum-grid">
+          <div class="sum-item"><span class="sum-k">题目数</span><span class="sum-v" id="sumCount">0</span></div>
+          <div class="sum-item"><span class="sum-k">正确率</span><span class="sum-v" id="sumAcc">0%</span></div>
+          <div class="sum-item"><span class="sum-k">总时长</span><span class="sum-v" id="sumTime">00:00</span></div>
+          <div class="sum-item"><span class="sum-k">均/题</span><span class="sum-v" id="sumAvg">0.0s</span></div>
+        </div>
+      </div>
+      <div class="card btn-row">
+        <button class="btn btn-line" data-go="home">返回首页</button>
+        <button class="btn btn-line" data-go="history">历史记录</button>
+        <button class="btn btn-primary" id="sumAgain">再来一次</button>
+      </div>
+      <div class="card">
+        <h3>题目明细</h3>
+        <div class="detail-list" id="sumDetail"></div>
+      </div>
+    </section>
+
+    <!-- ============ 历史记录 ============ -->
+    <section class="view" data-view="history">
+      <div class="card">
+        <h2>历史记录（最新 3 次）</h2>
+        <div class="history-list" id="historyList"></div>
+        <button class="btn btn-danger-ghost full" id="clearHistory">清空记录</button>
+      </div>
+      <div class="card btn-row">
+        <button class="btn btn-line" data-go="home">返回首页</button>
+      </div>
+    </section>
+
+    <!-- ============ 公式计算 - 菜单 ============ -->
+    <section class="view" data-view="formula-menu">
+      <div class="card">
+        <button class="btn btn-line back-btn-sm" data-go="home">← 返回</button>
+        <h2>公式计算</h2>
+        <p class="muted">针对资料分析高频公式进行专项训练，运算逻辑开发中，当前为界面预览。</p>
+      </div>
+      <div class="grid-2">
+        <button class="card pick small" data-formula="base">
+          <span class="pick-title">求基期</span>
+          <span class="pick-desc">基期量 = 现期量 / (1+增长率)</span>
+        </button>
+        <button class="card pick small" data-formula="growth">
+          <span class="pick-title">求增长量</span>
+          <span class="pick-desc">增长量 = 现期×增长率/(1+增长率)</span>
+        </button>
+        <button class="card pick small" data-formula="percent">
+          <span class="pick-title">百化分</span>
+          <span class="pick-desc">百分数化分数速记</span>
+        </button>
+        <button class="card pick small" data-formula="square">
+          <span class="pick-title">常见平方数</span>
+          <span class="pick-desc">1~30 平方速算</span>
+        </button>
+        <button class="card pick small" data-formula="rate">
+          <span class="pick-title">求增长率</span>
+          <span class="pick-desc">增长率 = 增长量 / 基期</span>
+        </button>
+      </div>
+    </section>
+
+    <!-- ============ 公式计算 - 占位详情 ============ -->
+    <section class="view" data-view="formula-detail">
+      <div class="card">
+        <button class="btn btn-line back-btn" data-go="formula-menu">← 返回</button>
+        <h2 id="fdTitle">公式练习</h2>
+        <div class="formula-box" id="fdFormula"></div>
+        <div class="placeholder" id="fdPlaceholder">
+          <span class="ph-icon">🛠</span>
+          <p>该公式练习的题目生成与判题逻辑开发中</p>
+          <p class="muted">UI 界面已就绪，敬请期待</p>
+        </div>
+        <div class="cfg-group">
+          <label class="cfg-label">题型类别</label>
+          <div class="seg-row">
+            <button class="seg active">单题练习</button>
+            <button class="seg">固定题数</button>
+          </div>
+        </div>
+        <div class="cfg-group">
+          <label class="cfg-label">题目数量</label>
+          <div class="seg-row">
+            <button class="seg active">5 题</button>
+            <button class="seg">10 题</button>
+            <button class="seg">15 题</button>
+            <button class="seg">20 题</button>
+          </div>
+        </div>
+        <button class="btn btn-primary full" disabled>开始练习（即将开放）</button>
+      </div>
+    </section>
+
+  </main>
+
+  <script src="script.js"></script>
+</body>
+</html>
