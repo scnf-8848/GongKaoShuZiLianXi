@@ -481,7 +481,7 @@
     const avg = qs.length ? (total/qs.length) : 0;
 
     $('#sumTitle').textContent = data.type + ' · 结算';
-    $('#sumCount').textContent = qs.length;
+    $('#sumCount').textContent = correct + '/' + qs.length;
     $('#sumAcc').textContent = acc+'%';
     $('#sumTime').textContent = fmtTime(total);
     $('#sumAvg').textContent = avg.toFixed(1)+'s';
