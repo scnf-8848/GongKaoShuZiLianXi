@@ -54,6 +54,7 @@
     aDigits:[],         // 无默认
     bDigits:[],         // 无默认
     mode:'single',
+    answer:'fill',      // fill=填空, choice=选择
     count:5
   };
 
@@ -107,6 +108,96 @@
     return rand(min, max);
   }
 
+  /* ---------- 选择题项生成 ---------- */
+  /* 数值的小数位数（用于统一各选项的显示精度） */
+  function decimalsOf(n){
+    const s = String(n);
+    return s.includes('.') ? s.split('.')[1].length : 0;
+  }
+  /* 按固定小数位四舍五入 */
+  function roundTo(n, dec){
+    const f = Math.pow(10, dec);
+    return Math.round(n*f)/f;
+  }
+  /* 比例偏差生成干扰项（用于两位数及以上答案）
+     lo/hi：最小/最大比例偏差；minAbs：可选的最小绝对间距；
+     opts：累积选项数组（含正确项）。 */
+  function genRatio(correct, dec, lo, hi, minAbs, opts){
+    let guard = 0;
+    while(opts.length < 4 && guard < 400){
+      guard++;
+      const sign = Math.random() < 0.5 ? -1 : 1;
+      const bias = (lo + Math.random()*(hi-lo)) * sign;
+      const w = roundTo(correct * (1 + bias), dec);
+      if(!isFinite(w) || Math.abs(w) < 1e-9) continue;
+      if(opts.some(o=>Math.abs(o - w) < 1e-9)) continue;   // 去重
+      const rel = Math.abs(w - correct) / Math.abs(correct) * 100;
+      if(rel < lo*100) continue;                 // 不过于接近正确项
+      if(minAbs != null && Math.abs(w - correct) < minAbs) continue;  // 绝对最小间距
+      if(Math.abs(w) > Math.abs(correct) * 5) continue;   // 同数量级约束
+      opts.push(w);
+    }
+    // 兜底：若随机未能凑满 4 个，用递增偏差补足
+    guard = 0;
+    while(opts.length < 4){
+      const sign = guard % 2 ? 1 : -1;
+      const bias = (lo + 0.01 + guard*0.02) * sign;
+      const w = roundTo(correct * (1 + bias), dec);
+      if(minAbs != null && Math.abs(w - correct) < minAbs){ guard++; continue; }
+      if(!opts.some(o=>Math.abs(o - w) < 1e-9)) opts.push(w);
+      guard++;
+    }
+  }
+
+  /* 生成 4 个选项：
+     正确项 = 精确答案四舍五入保留最多 2 位小数；
+     干扰项与正确项采用相同的小数位数，保证格式完全一致。
+     干扰项生成按答案量级自适应（最小偏差 3%）：
+       |正确项| < 10   → 绝对偏移 ±1,±2,±3…（个位数合理误差即相邻整数）
+       10~99           → 比例偏差 3%~10% + 绝对最小间距 1
+       ≥100            → 比例偏差 3%~10% */
+  function genOptions(q){
+    const dec = Math.min(2, decimalsOf(q.answer));   // 正确项最多保留 2 位小数
+    const correct = roundTo(q.answer, dec);          // 正确项
+    const opts = [correct];
+
+    // 正确答案为 0（或极接近 0）的退化情况：用小的整数值作干扰项
+    if(Math.abs(correct) < 1e-9){
+      const pool = [1,-1,2,-2,3,-3];
+      for(let i=0; opts.length<4 && i<pool.length; i++){
+        if(!opts.includes(pool[i])) opts.push(pool[i]);
+      }
+    }else if(Math.abs(correct) < 10){
+      // 个位数：绝对偏移 ±1,±2,±3…
+      const offsets = [1,-1,2,-2,3,-3,4,-4,5,-5,10,-10];
+      for(const k of offsets){
+        if(opts.length >= 4) break;
+        const w = roundTo(correct + k, dec);
+        if(opts.some(o=>Math.abs(o - w) < 1e-9)) continue;
+        opts.push(w);
+      }
+      // 兜底：递增偏移补足
+      let guard = 1;
+      while(opts.length < 4){
+        const w = roundTo(correct + guard, dec);
+        if(!opts.some(o=>Math.abs(o - w) < 1e-9)) opts.push(w);
+        guard++;
+      }
+    }else if(Math.abs(correct) < 100){
+      // 两位数：比例偏差 3%~10%，保证至少相差 1
+      genRatio(correct, dec, 0.03, 0.10, 1, opts);
+    }else{
+      // 三位数及以上：比例偏差 3%~10%
+      genRatio(correct, dec, 0.03, 0.10, null, opts);
+    }
+    // 打乱顺序
+    for(let i=opts.length-1;i>0;i--){
+      const j = rand(0, i);
+      [opts[i], opts[j]] = [opts[j], opts[i]];
+    }
+    return { opts, correct, dec };
+  }
+
   function genQuestion(){
     const op = cfg.ops[rand(0,cfg.ops.length-1)];
     const da = +cfg.aDigits[rand(0,cfg.aDigits.length-1)];
@@ -129,7 +220,11 @@
       answer = a / b;
     }
     expr = `${a} ${OP_SYMBOL[op]} ${b}`;
-    return { op,a,b,answer,expr };
+    const g = genOptions({a, b, op, answer});
+    const correctIndex = g.opts.indexOf(g.correct);
+    return { op,a,b,answer,expr, dec:g.dec,
+      options: g.opts.map(v=>({ val:v, text:v.toFixed(g.dec) })),
+      correctIndex };
   }
 
   /* ---------- 单题练习 ---------- */
@@ -178,12 +273,14 @@
     const btn = $('#singlePause');
     const inp = $('#singleInput');
     const numpadKeys = $$('.numpad-key');
+    const choiceBtns = $$('.choice-btn', $('#singleChoice'));
     if(single.paused){
       single.pauseStart = Date.now();
       btn.textContent = '继续';
       btn.classList.add('paused');
       inp.disabled = true;
       numpadKeys.forEach(k=>k.disabled = true);
+      choiceBtns.forEach(b=>b.disabled = true);
       // 清除自动跳转（暂停时不应跳题）
       clearTimeout(single.autoNextTimer);
     } else {
@@ -193,6 +290,7 @@
       inp.disabled = false;
       inp.readOnly = isTouchDevice();
       numpadKeys.forEach(k=>k.disabled = false);
+      choiceBtns.forEach(b=>b.disabled = false);
       if(!isTouchDevice()) inp.focus();
     }
   }
@@ -215,13 +313,69 @@
     single.curStart = Date.now();
     $('#singleIndex').textContent = `第 ${single.questions.length+1} 题`;
     $('#singleExpr').textContent = single.cur.expr + ' = ?';
-    $('#singleInput').value = '';
-    $('#singleInput').disabled = false;
-    $('#singleInput').readOnly = isTouchDevice();
-    $$('.numpad-key').forEach(k=>k.disabled = false);
+    const isChoice = cfg.answer === 'choice';
+    $('#singleChoice').style.display = isChoice ? '' : 'none';
+    $('#singleChoiceHint').style.display = isChoice ? '' : 'none';
+    $('#singleAnswerRow').style.display = isChoice ? 'none' : '';
+    $('#numpad').style.display = isChoice ? 'none' : '';
+    if(isChoice){
+      renderSingleChoice();
+    }else{
+      $('#singleInput').value = '';
+      $('#singleInput').disabled = false;
+      $('#singleInput').readOnly = isTouchDevice();
+      $$('.numpad-key').forEach(k=>k.disabled = false);
+    }
     $('#singleFeedback').className = 'feedback';
     $('#singleFeedback').textContent = '';
-    if(!isTouchDevice()) $('#singleInput').focus();
+    if(!isChoice && !isTouchDevice()) $('#singleInput').focus();
+  }
+
+  /* 渲染单题选择题（十字排布：上/左/右/下） */
+  function renderSingleChoice(){
+    const wrap = $('#singleChoice');
+    wrap.innerHTML = '';
+    const dirs = ['top','left','right','bottom'];
+    const arrows = {top:'↑', left:'←', right:'→', bottom:'↓'};
+    single.cur.options.forEach((o,i)=>{
+      const b = document.createElement('button');
+      b.className = 'choice-btn choice-btn--' + dirs[i];
+      b.dataset.index = i;
+      b.textContent = `${arrows[dirs[i]]} ${o.text}`;
+      b.addEventListener('click', ()=>chooseSingle(i));
+      wrap.appendChild(b);
+    });
+  }
+
+  /* 选择题作答 */
+  function chooseSingle(i){
+    if(!single.cur || single.paused) return;
+    if(single.revealing){ nextSingle(); return; }
+    const q = single.cur;
+    const correct = i === q.correctIndex;
+    const usedSec = (Date.now()-single.curStart)/1000;
+    const btns = $$('.choice-btn', $('#singleChoice'));
+    btns.forEach(b=>b.disabled = true);
+    btns[i].classList.add('selected');
+    const correctBtn = btns[q.correctIndex];
+    if(correct){
+      $('#singleFeedback').className = 'feedback ok';
+      $('#singleFeedback').textContent = '✓ 正确';
+      correctBtn.classList.add('ok');
+    }else{
+      $('#singleFeedback').className = 'feedback err';
+      $('#singleFeedback').textContent = `✗ 错误，正确答案：${q.options[q.correctIndex].text}`;
+      btns[i].classList.add('err');
+      correctBtn.classList.add('ok');
+    }
+    single.questions.push({
+      expr:q.expr, answer:q.answer,
+      displayAnswer: q.options[q.correctIndex].text, errorPct:'-',
+      userText: q.options[i].text, user: q.options[i].text, correct,
+      usedSec
+    });
+    single.cur = null;
+    single.autoNextTimer = setTimeout(()=>nextSingle(), correct?700:1200);
   }
 
   function submitSingle(){
@@ -277,13 +431,17 @@
     const display = formatAnswer(single.cur.answer);
     $('#singleFeedback').className = 'feedback info';
     $('#singleFeedback').textContent = `答案：${display}（点击"跳过"继续）`;
-    $('#singleInput').disabled = true;
-    $$('.numpad-key').forEach(k=>k.disabled = true);
+    if(cfg.answer === 'choice'){
+      $$('.choice-btn', $('#singleChoice')).forEach(b=>b.disabled = true);
+    }else{
+      $('#singleInput').disabled = true;
+      $$('.numpad-key').forEach(k=>k.disabled = true);
+    }
     // 查看答案计为错误
     single.questions.push({
       expr: single.cur.expr, answer: single.cur.answer,
       displayAnswer: display, errorPct: '-',
-      user: '(查看答案)', correct: false,
+      userText: '(查看答案)', user: '', correct: false,
       usedSec: (Date.now()-single.curStart)/1000
     });
     single.cur = null;
@@ -298,7 +456,8 @@
     showSummary({
       type:'单题练习',
       questions: single.questions,
-      totalSec: (Date.now()-single.start)/1000
+      totalSec: (Date.now()-single.start)/1000,
+      answerMode: cfg.answer
     });
   }
 
@@ -374,9 +533,14 @@
     timer:null
   };
 
+  function fixedDoneCount(){
+    return fixed.questions.filter(q=> q.user!==undefined && q.user!=='').length;
+  }
+
   function startFixed(){
     lastPracticeSource = 'basic';
     const n = cfg.count;
+    const isChoice = cfg.answer === 'choice';
     fixed.questions = [];
     for(let i=0;i<n;i++){
       const q = genQuestion();
@@ -389,20 +553,46 @@
     fixed.questions.forEach((q,i)=>{
       const item = document.createElement('div');
       item.className = 'fixed-item';
-      item.innerHTML = `
-        <span class="fi-idx">${i+1}</span>
-        <span class="fi-expr">${q.expr} <span class="eq">=</span></span>
-        <input class="fi-input" inputmode="numeric" autocomplete="off" data-i="${i}" placeholder="?" />
-      `;
+      if(isChoice){
+        item.innerHTML = `
+          <span class="fi-idx">${i+1}</span>
+          <span class="fi-expr">${q.expr} <span class="eq">=</span></span>
+          <div class="fi-options">
+            ${q.options.map((o,oi)=>`<button class="fi-opt" data-i="${i}" data-oi="${oi}">${o.text}</button>`).join('')}
+          </div>
+        `;
+      }else{
+        item.innerHTML = `
+          <span class="fi-idx">${i+1}</span>
+          <span class="fi-expr">${q.expr} <span class="eq">=</span></span>
+          <input class="fi-input" inputmode="numeric" autocomplete="off" data-i="${i}" placeholder="?" />
+        `;
+      }
       list.appendChild(item);
     });
     list.addEventListener('input', onFixedInput);
+    list.addEventListener('click', onFixedOpt);
     $('#fCount').textContent = n;
+    $('#fixedChoiceHint').style.display = isChoice ? '' : 'none';
     fixed.timer = setInterval(tickFixed,200);
     go('fixed');
-    // 自动聚焦第一题
-    const first = $('.fi-input',list);
-    if(first) first.focus();
+    // 自动聚焦第一题（填空模式）
+    if(!isChoice){
+      const first = $('.fi-input',list);
+      if(first) first.focus();
+    }
+  }
+
+  function onFixedOpt(e){
+    const b = e.target.closest('.fi-opt'); if(!b) return;
+    const i = +b.dataset.i;
+    const oi = +b.dataset.oi;
+    fixed.questions[i].user = oi;
+    const item = b.closest('.fixed-item');
+    $$('.fi-opt', item).forEach(x=>x.classList.remove('selected'));
+    b.classList.add('selected');
+    item.classList.add('done');
+    $('#fDone').textContent = fixedDoneCount();
   }
 
   function onFixedInput(e){
@@ -414,38 +604,55 @@
     fixed.questions[i].user = val;
     if(val===''){ item.classList.remove('done'); return; }
     item.classList.add('done');
-    $('#fDone').textContent = fixed.questions.filter(q=>q.user!=='').length;
+    $('#fDone').textContent = fixedDoneCount();
   }
 
   function tickFixed(){
     const total = (Date.now()-fixed.start)/1000;
     $('#fTotalTime').textContent = fmtTime(total);
-    $('#fDone').textContent = fixed.questions.filter(q=>q.user!=='').length;
+    $('#fDone').textContent = fixedDoneCount();
   }
 
   function submitFixed(){
     const totalSec = (Date.now()-fixed.start)/1000;
     const per = fixed.questions.length ? totalSec/fixed.questions.length : 0;
+    const isChoice = cfg.answer === 'choice';
     fixed.questions.forEach(q=>{
-      const u = q.user==='' ? null : parseNum(q.user);
-      if(u !== null){
-        const result = checkAnswer(u, q);
-        q.correct = result.correct;
-        q.displayAnswer = result.displayAnswer;
-        q.errorPct = result.errorPct;
-      } else {
-        q.correct = false;
-        q.displayAnswer = formatAnswer(q.answer);
-        q.errorPct = '-';
+      if(isChoice){
+        if(q.user === undefined || q.user === ''){
+          q.correct = false;
+          q.displayAnswer = q.options[q.correctIndex].text;
+          q.errorPct = '-';
+          q.userText = '未选';
+        }else{
+          const oi = q.user;
+          q.correct = oi === q.correctIndex;
+          q.displayAnswer = q.options[q.correctIndex].text;
+          q.errorPct = '-';
+          q.userText = q.options[oi].text;
+        }
+      }else{
+        const u = q.user==='' ? null : parseNum(q.user);
+        if(u !== null){
+          const result = checkAnswer(u, q);
+          q.correct = result.correct;
+          q.displayAnswer = result.displayAnswer;
+          q.errorPct = result.errorPct;
+        } else {
+          q.correct = false;
+          q.displayAnswer = formatAnswer(q.answer);
+          q.errorPct = '-';
+        }
+        q.userText = q.user==='' ? '未填' : q.user;
       }
       q.usedSec = per;
-      q.userText = q.user==='' ? '未填' : q.user;
     });
     stopFixedTimers();
     showSummary({
       type:`固定题数（${fixed.questions.length}题）`,
       questions: fixed.questions,
-      totalSec
+      totalSec,
+      answerMode: cfg.answer
     });
   }
 
@@ -490,6 +697,7 @@
     const isFixed = data.type.includes('固定题数');
     detail.className = 'detail-list' + (isFixed ? ' no-time' : '');
     detail.innerHTML = '';
+    const isFill = data.answerMode !== 'choice';   // 填空模式（含平方数练习）
     qs.forEach((q,i)=>{
       const ok = q.correct;
       const row = document.createElement('div');
@@ -497,10 +705,11 @@
       const da = q.displayAnswer || String(q.answer);
       const ep = q.errorPct || '-';
       const tm = (!isFixed && q.usedSec !== undefined) ? q.usedSec.toFixed(1)+'s' : '';
+      const userVal = q.userText!==undefined ? q.userText : (q.user!==undefined ? q.user : '');
       row.innerHTML = `
         <span class="di-idx">${i+1}</span>
         <span class="di-q">${q.expr} = ${da}</span>
-        <span class="di-a ${ok?'ok':'err'}">${ok?'✔':('✘ '+(q.userText||q.user||'空'))}</span>
+        <span class="di-a ${ok?'ok':'err'}">${ok ? (isFill ? '✔ ' + userVal : '✔') : ('✘ ' + userVal)}</span>
         <span class="di-t">${ep}</span>
         ${isFixed ? '' : `<span class="di-time">${tm}</span>`}
       `;
@@ -969,9 +1178,10 @@
     initChips('cfgA','aDigits');
     initChips('cfgB','bDigits');
     initSegs('cfgMode','mode',false);
+    initSegs('cfgAnswer','answer',false);
     initSegs('cfgCount','count',true);
 
-    // 手动修改配置时取消快速配置选中状态（排除题型类别和题目数量）
+    // 手动修改配置时取消快速配置选中状态（排除题型类别、答题方式和题目数量）
     function clearQuickPreset(){
       $$('.quick-chip.active').forEach(c=>c.classList.remove('active'));
     }
@@ -980,8 +1190,8 @@
       mainCard.addEventListener('click', e=>{
         const t = e.target.closest('.chip,.seg');
         if(t && !t.classList.contains('quick-chip')){
-          // 排除 cfgMode 和 cfgCount 区域
-          const wrap = t.closest('#cfgMode,#cfgCount');
+          // 排除 cfgMode / cfgAnswer / cfgCount 区域
+          const wrap = t.closest('#cfgMode,#cfgAnswer,#cfgCount');
           if(!wrap) clearQuickPreset();
         }
       });
@@ -1053,6 +1263,14 @@
     $('#singleInput').addEventListener('keydown', e=>{
       if(e.key==='Enter' && !single.paused){ e.preventDefault(); submitSingle(); }
     });
+    // 选择题：方向键快速作答（仅单题模式）
+    document.addEventListener('keydown', e=>{
+      const av = document.querySelector('.view.active');
+      if(!av || av.dataset.view !== 'single') return;
+      if(cfg.answer !== 'choice' || !single.cur || single.paused) return;
+      const map = {ArrowUp:0, ArrowLeft:1, ArrowRight:2, ArrowDown:3};
+      if(e.key in map){ e.preventDefault(); chooseSingle(map[e.key]); }
+    });
     // 数字软键盘
     $('#numpad').addEventListener('click', e=>{
       const key = e.target.closest('.numpad-key');
@@ -1099,6 +1317,8 @@
       const modeWrap = $('#cfgMode'), countWrap = $('#cfgCount');
       if(modeWrap) $$('.seg',modeWrap).forEach(s=>s.classList.toggle('active', String(s.dataset.val)===String(cfg.mode)));
       if(countWrap) $$('.seg',countWrap).forEach(s=>s.classList.toggle('active', +s.dataset.val===+cfg.count));
+      const ansWrap = $('#cfgAnswer');
+      if(ansWrap) $$('.seg',ansWrap).forEach(s=>s.classList.toggle('active', String(s.dataset.val)===String(cfg.answer)));
       $('#fixedCountWrap').style.display = cfg.mode==='fixed'?'':'none';
       try{
         if(cfg.mode==='single') startSingle(); else startFixed();
