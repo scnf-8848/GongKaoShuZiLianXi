@@ -235,6 +235,42 @@ body{
   transition:border-color .15s;
 }
 .answer-input:focus{border-color:var(--primary);}
+
+/* ============ 选择题提示文字 ============ */
+.choice-hint{
+  margin:0 auto 12px;max-width:340px;text-align:center;
+  font-size:12px;color:var(--muted);line-height:1.6;
+}
+.choice-hint-main{font-weight:600;color:var(--muted);}
+.choice-hint-sub{font-size:11px;color:var(--muted);opacity:.85;}
+
+/* ============ 选择题（十字排布） ============ */
+.choice-cross{
+  display:grid;
+  grid-template-columns:repeat(3,1fr);
+  grid-template-areas:
+    ". top ."
+    "left mid right"
+    ". bottom .";
+  gap:10px;
+  max-width:340px;
+  margin:0 auto 16px;
+}
+.choice-btn--top{grid-area:top;}
+.choice-btn--left{grid-area:left;}
+.choice-btn--right{grid-area:right;}
+.choice-btn--bottom{grid-area:bottom;}
+.choice-btn--mid{grid-area:mid;visibility:hidden;}
+.choice-btn{
+  border:2px solid var(--line);background:#fff;color:var(--ink);
+  border-radius:12px;padding:14px 8px;font-size:18px;font-weight:600;
+  cursor:pointer;transition:all .12s;min-width:0;
+}
+.choice-btn:active{transform:scale(.96);}
+.choice-btn.selected{background:var(--primary);color:#fff;border-color:var(--primary);}
+.choice-btn.ok{background:var(--ok);color:#fff;border-color:var(--ok);}
+.choice-btn.err{background:var(--err);color:#fff;border-color:var(--err);}
+.choice-btn[disabled]{opacity:.65;cursor:not-allowed;}
 .feedback{min-height:26px;font-size:15px;font-weight:600;margin-bottom:10px;}
 .feedback.ok{color:var(--ok);}
 .feedback.err{color:var(--err);}
@@ -291,6 +327,16 @@ body{
 .fixed-item .fi-input:focus{border-color:var(--primary);}
 .fixed-item.done{background:var(--ok-bg);}
 .fixed-item.done .fi-input{border-color:var(--ok);}
+/* 固定题数 - 选择模式：选项单行排布 */
+.fixed-item .fi-options{display:flex;gap:8px;flex:1;min-width:0;overflow-x:auto;}
+.fixed-item .fi-opt{
+  border:1px solid var(--line);background:#fff;color:var(--ink);
+  border-radius:8px;padding:5px 8px;font-size:14px;font-weight:600;
+  cursor:pointer;transition:all .1s;white-space:nowrap;flex-shrink:0;
+}
+.fixed-item .fi-opt:active{transform:scale(.95);}
+.fixed-item .fi-opt.selected{background:var(--primary);color:#fff;border-color:var(--primary);}
+.fixed-item.done .fi-opt.selected{background:var(--ok);border-color:var(--ok);}
 
 /* ============ 结算页 ============ */
 .sum-grid{
