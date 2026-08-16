@@ -102,6 +102,13 @@
               <button class="seg" data-val="fixed">固定题数</button>
             </div>
           </div>
+          <div class="cfg-group">
+            <label class="cfg-label">答题方式</label>
+            <div class="seg-row seg-row-compact" id="cfgAnswer">
+              <button class="seg active" data-val="fill">填空</button>
+              <button class="seg" data-val="choice">选择</button>
+            </div>
+          </div>
           <div class="cfg-group" id="fixedCountWrap" style="display:none;">
             <label class="cfg-label">题目数量</label>
             <div class="seg-row" id="cfgCount">
@@ -136,7 +143,12 @@
           <button class="btn btn-pause" id="singlePause">暂停</button>
         </div>
         <div class="q-expr" id="singleExpr">—</div>
-        <div class="answer-row">
+        <div class="choice-hint" id="singleChoiceHint" style="display:none;">
+          <div class="choice-hint-main">选择最接近精确答案的选项</div>
+          <div class="choice-hint-sub">键盘方向键快速选择</div>
+        </div>
+        <div class="choice-cross" id="singleChoice" style="display:none;"></div>
+        <div class="answer-row" id="singleAnswerRow">
           <input type="text" inputmode="numeric" id="singleInput" class="answer-input" placeholder="输入答案后回车" autocomplete="off" />
         </div>
         <div class="feedback" id="singleFeedback"></div>
@@ -176,6 +188,9 @@
         <div class="q-header" style="margin-bottom:10px;">
           <button class="btn btn-danger-ghost btn-end" id="fixedEnd">结束练习</button>
           <div style="flex:1;"></div>
+        </div>
+        <div class="choice-hint" id="fixedChoiceHint" style="display:none;">
+          <div class="choice-hint-main">选择最接近精确答案的选项</div>
         </div>
         <div class="fixed-list" id="fixedList"></div>
         <div class="btn-row">
