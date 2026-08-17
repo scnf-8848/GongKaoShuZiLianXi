@@ -35,7 +35,9 @@
     'formula-menu':'公式计算',
     'formula-detail':'公式练习',
     'square-single':'平方数练习 · 单题',
-    'square-fixed':'平方数练习 · 固定题数'
+    'square-fixed':'平方数练习 · 固定题数',
+    'bhf-single':'百化分练习 · 单题',
+    'bhf-fixed':'百化分练习 · 固定题数'
   };
   function go(view){
     $$('.view').forEach(v=>v.classList.toggle('active', v.dataset.view===view));
@@ -669,6 +671,7 @@
     stopSingleTimers();
     stopFixedTimers();
     stopAllSquareTimers();
+    stopBHFAllTimers();
   }
 
   /* ---------- 结算页 ---------- */
@@ -698,10 +701,28 @@
     detail.className = 'detail-list' + (isFixed ? ' no-time' : '');
     detail.innerHTML = '';
     const isFill = data.answerMode !== 'choice';   // 填空模式（含平方数练习）
+    // 各练习的允许误差上限（%）：乘/除、百化分为 2%；加/减、平方数为精确匹配
+    let allowedErr = 2;
+    if(data.type.includes('平方数')) allowedErr = 0;
+    function errPctOf(q){
+      const user = q.user!==undefined ? q.user : q.userText;
+      const ans = q.answer;
+      if(user===null || user===undefined || ans===0) return null;
+      if(typeof user === 'string'){ if(user==='未填'||user==='(查看答案)'||user===''||isNaN(parseFloat(user))) return null; }
+      const u = +user; if(isNaN(u)) return null;
+      if(u === ans) return 0;
+      return Math.abs(u-ans)/Math.abs(ans)*100;
+    }
     qs.forEach((q,i)=>{
-      const ok = q.correct;
+      // 颜色分级：误差<1% 绿；1%~允许上限 橙；超限 红
+      const err = errPctOf(q);
+      let tier = 'err';
+      if(q.correct){
+        if(err === null || err < 1) tier = 'ok';
+        else if(err <= allowedErr) tier = 'warn';
+      }
       const row = document.createElement('div');
-      row.className = 'detail-item ' + (ok?'ok':'err') + (isFixed?' no-time':'');
+      row.className = 'detail-item ' + tier + (isFixed?' no-time':'');
       const da = q.displayAnswer || String(q.answer);
       const ep = q.errorPct || '-';
       const tm = (!isFixed && q.usedSec !== undefined) ? q.usedSec.toFixed(1)+'s' : '';
@@ -709,7 +730,7 @@
       row.innerHTML = `
         <span class="di-idx">${i+1}</span>
         <span class="di-q">${q.expr} = ${da}</span>
-        <span class="di-a ${ok?'ok':'err'}">${ok ? (isFill ? '✔ ' + userVal : '✔') : ('✘ ' + userVal)}</span>
+        <span class="di-a ${tier}">${q.correct ? (isFill ? '✔ ' + userVal : '✔') : ('✘ ' + userVal)}</span>
         <span class="di-t">${ep}</span>
         ${isFixed ? '' : `<span class="di-time">${tm}</span>`}
       `;
@@ -822,10 +843,159 @@
       desc:'已知增长量和基期量，求增长率'
     }
   };
+  /* U 型百化分交互区：百分数沿 U 型条连续排列，悬停显示该位置对应的分数 */
+  /* U 型百化分预设点：分三段（左臂 / 半圆弧 / 右臂），只写百分数，分数自动换算。
+     需要手动增删点：直接修改下面数组即可。 */
+  const BHF_PRESET = {
+    left:[2,2.2,2.5,3,3.5,4,4.5,5,5.5,6,6.5,7,7.5,8,8.5,9],                             // 左臂（上→下）
+    arc:[9.5,10,10.5],                                                                      // 半圆弧（左→底部10→右）
+    right:[11,11.5,12,13,14,15,16,17,18,19,20,23,25,27,30,35,40,45,50] // 右臂（下→上）
+  };
+
+  function renderBHF(el){
+    const ARCLO=9, ARCCTR=10, ARCHI=11;   // 半圆弧：左端9 → 中心10(最底部) → 右端11，保证10在弧正中
+    const PLTOP=2, PRTOP=50;                // 左右臂顶端百分数（互余：2×50=100）
+    const VB=340, VBH=400;                  // SVG viewBox 尺寸
+    // 窄长 U 型（在 viewBox 内居中）：两臂接近，底部为半圆弧（体现对称性）
+    const LARM=120, RARM=220, TOP=12, BT=316;
+    const D=`M${LARM} ${TOP} L${LARM} ${BT} A50 50 0 0 0 ${RARM} ${BT} L${RARM} ${TOP}`;
+    const LEN=BT-TOP;                       // 单臂垂直长度
+    const NS='http://www.w3.org/2000/svg';
+
+    el.innerHTML = `
+      <svg class="bhf-svg" id="bhfSvg" viewBox="0 0 ${VB} ${VBH}" preserveAspectRatio="xMidYMid meet">
+        <path id="bhfPath" d="${D}" fill="none" stroke="#c9d8f7" stroke-width="10" stroke-linecap="round"/>
+        <path id="bhfBar" d="${D}" fill="none" stroke="#5b7bd9" stroke-width="2" stroke-linecap="round"/>
+        <path d="${D}" fill="none" stroke="#5b7bd9" stroke-width="1" stroke-dasharray="2 4" opacity=".5"/>
+      </svg>
+    `;
+    // 去掉 formula-box 的大留白，给 SVG 腾出空间
+    el.style.padding='4px'; el.style.margin='0 0 8px';
+    el.style.minHeight='0';
+    el.style.overflow='visible';
+    el.style.position='relative';
+
+    const svg = $('#bhfSvg');
+    const path = $('#bhfPath');
+    const total = path.getTotalLength();
+    const arcLen = total - LEN*2;
+
+    // 位置(+)：百分数 p <=> 所在长度 t
+    // 左臂 2(顶)→9.1(底)；圆弧 9.1→11.1（中心=10 最底部，左右 9.5/10.5 约在 1/4、3/4 处）；右臂 11.1(底)→50(顶)
+    // 左右臂用对数映射，使互为倒数的百分数（如 7.7% 与 13%）落于同一高度
+    function lenAt(p){
+      if(p <= ARCLO)  return Math.log(p/PLTOP)/Math.log(ARCLO/PLTOP)*LEN;
+      if(p < ARCHI){
+        const f = p <= ARCCTR ? (p-ARCLO)/(ARCCTR-ARCLO)*0.5 : 0.5 + (p-ARCCTR)/(ARCHI-ARCCTR)*0.5;
+        return LEN + f*arcLen;
+      }
+      return LEN+arcLen + Math.log(p/ARCHI)/Math.log(PRTOP/ARCHI)*LEN;
+    }
+    function pAt(t){
+      if(t < LEN)        return PLTOP*Math.pow(ARCLO/PLTOP, t/LEN);
+      if(t < LEN+arcLen){
+        const f=(t-LEN)/arcLen;
+        return f <= 0.5 ? ARCLO + f/0.5*(ARCCTR-ARCLO) : ARCCTR + (f-0.5)/0.5*(ARCHI-ARCCTR);
+      }
+      const r=(t-LEN-arcLen)/LEN;
+      return ARCHI*Math.pow(PRTOP/ARCHI, r);
+    }
+
+    // 数值显示：去掉多余的尾随零（如 6.25 → "6.25"，10 → "10"）
+    function strip(v){ v=Math.round(v*100)/100; return String(v); }
+    // 分数换算：1/(100/p)，保留 1 位小数（如 7.7%→1/13，13%→1/7.7）
+    function denom(p){ const n=Math.round(1000/p)/10; return Math.round(n)===n ? String(Math.round(n)) : strip(n); }
+    function fracStr(p){ return '1/'+denom(p); }
+
+    // 渲染一个锚点：圆点 + 百分数（外侧）+ 分数（内侧）；半圆弧为「分数在上、百分数在下」
+    const PS=9, FS=9;   // 百分数 / 分数 字号
+    function addPoint(p, side){
+      const t=lenAt(p);
+      const pt=path.getPointAtLength(t);
+      const g=document.createElementNS(NS,'g');
+      g.setAttribute('class','bhf-ancg');
+      const c=document.createElementNS(NS,'circle');
+      c.setAttribute('cx',pt.x); c.setAttribute('cy',pt.y);
+      c.setAttribute('r',3.2); c.setAttribute('fill','#5b7bd9');
+      g.appendChild(c);
+      const mk=(text,cls,x,y,anch)=>{
+        const tt=document.createElementNS(NS,'text');
+        tt.setAttribute('x',x); tt.setAttribute('y',y);
+        tt.setAttribute('text-anchor',anch);
+        tt.setAttribute('font-size',cls==='bhf-f'?FS:PS);
+        tt.setAttribute('class',cls); tt.textContent=text;
+        g.appendChild(tt);
+      };
+      const pstr=strip(p)+'%', fstr=fracStr(p);
+      if(side==='left'){
+        mk(pstr,'bhf-p',pt.x-12,pt.y+3,'end');    // 外侧=百分数，距圆点左侧
+        mk(fstr,'bhf-f',pt.x+12,pt.y+3,'start');   // 内侧=分数，距圆点右侧
+      }else if(side==='right'){
+        mk(pstr,'bhf-p',pt.x+12,pt.y+3,'start');  // 外侧=百分数，距圆点右侧
+        mk(fstr,'bhf-f',pt.x-12,pt.y+3,'end');     // 内侧=分数，距圆点左侧
+      }else if(p < ARCCTR){
+        // 前半弧（9→10）：分数右上、百分数左下
+        mk(fstr,'bhf-f',pt.x+12, pt.y-10,'middle');
+        mk(pstr,'bhf-p',pt.x-12, pt.y+10,'middle');
+      }else if(p > ARCCTR){
+        // 后半弧（10→11）：分数左上、百分数右下
+        mk(fstr,'bhf-f',pt.x-12, pt.y-10,'middle');
+        mk(pstr,'bhf-p',pt.x+12, pt.y+10,'middle');
+      }else{
+        // 弧底部中心10：分数在上、百分数在下
+        mk(fstr,'bhf-f',pt.x,pt.y-13,'middle');
+        mk(pstr,'bhf-p',pt.x,pt.y+13,'middle');
+      }
+      svg.appendChild(g);
+    }
+    BHF_PRESET.left.forEach(p=>addPoint(p,'left'));
+    BHF_PRESET.arc.forEach(p=>addPoint(p,'arc'));
+    BHF_PRESET.right.forEach(p=>addPoint(p,'right'));
+
+    // 悬停跟随提示
+    const tip=document.createElement('div');
+    tip.className='bhf-tip';
+    el.appendChild(tip);
+
+    function fmt(v){ return String(Math.round(v*10)/10); }
+
+    let raf=null;
+    function handle(e){
+      if(raf) cancelAnimationFrame(raf);
+      raf=requestAnimationFrame(()=>{
+        const rect=svg.getBoundingClientRect();
+        const x=(e.clientX-rect.left)*(VB/rect.width);
+        const y=(e.clientY-rect.top)*(VBH/rect.height);
+        let bestL=0, best=Infinity;
+        for(let l=0;l<=total;l+=2){
+          const p=path.getPointAtLength(l);
+          const dd=((p.x-x)*(p.x-x)+(p.y-y)*(p.y-y));
+          if(dd<best){best=dd;bestL=l;}
+        }
+        const nearOk=Math.sqrt(best) < 16;
+        sync2(e.clientX, e.clientY, bestL, nearOk);
+      });
+    }
+    function sync2(mx, my, l, ok){
+      const p=pAt(l);
+      const den=100/p;
+      const text=`${fmt(p)}% = 1/${fmt(Math.round(den*10)/10)}`;
+      const er=el.getBoundingClientRect();
+      tip.textContent=text;
+      tip.style.left=(mx-er.left+12)+'px';
+      tip.style.top=(my-er.top-8)+'px';
+      tip.style.transform='translateY(-100%)';
+      tip.style.display=ok?'block':'none';
+    }
+    svg.addEventListener('mousemove', handle);
+    svg.addEventListener('mouseleave', ()=>{ tip.style.display='none'; });
+  }
+
   function openFormula(key){
     const info = FORMULA_INFO[key];
     $('#fdTitle').textContent = info.title;
     const el = $('#fdFormula');
+    el.style.overflow = '';
     // 平方数显示 1~30 平方数表
     if(key === 'square'){
       const cells = [];
@@ -833,6 +1003,9 @@
         cells.push(`<span>${i}²=${i*i}</span>`);
       }
       el.innerHTML = '<div class="square-table">'+cells.join('')+'</div>';
+    }else if(key === 'percent'){
+      // 百化分：U 型交互区
+      renderBHF(el);
     }else{
       // 其他公式用 KaTeX 渲染
       if(window.katex){
@@ -845,19 +1018,25 @@
         el.textContent = info.formula;
       }
     }
-    // 更新描述文字
-    const desc = $('#fdDesc');
-    if(desc) desc.textContent = info.desc || '';
-    // 平方数显示配置区，其他公式显示占位
+    // 平方数/百化分显示内容，其他公式显示占位
+    const pcCfg = $('#fdPercentConfig');
     const sqCfg = $('#fdSquareConfig');
     const ph = $('#fdPlaceholder');
     if(key === 'square'){
       sqCfg.style.display = '';
+      pcCfg.style.display = 'none';
       ph.style.display = 'none';
       // 重置平方数配置提示
       const tip = $('#sqCfgTip');
       if(tip) tip.textContent = '';
+    }else if(key === 'percent'){
+      pcCfg.style.display = '';
+      sqCfg.style.display = 'none';
+      ph.style.display = 'none';
+      const tip = $('#bhfCfgTip');
+      if(tip) tip.textContent = '';
     }else{
+      pcCfg.style.display = 'none';
       sqCfg.style.display = 'none';
       ph.style.display = '';
     }
@@ -1166,6 +1345,293 @@
     stopSqFixedTimers();
   }
 
+  /* ---------- 百化分练习 ----------
+     在选中范围内随机生成最多 1 位小数的百分数 p，
+     用户回答对应分数 1/(100/p) 的分母，精确答案保留 1 位小数，允许误差 2%。 */
+  const BHF_RANGES = { '1-10':[1,10], '10-20':[10,20], '20-50':[20,50] };
+  const bhfCfg = { ranges:new Set(), mode:'single', count:5 };
+
+  function initBHFChips(){
+    const wrap = $('#bhfRange');
+    if(!wrap) return;
+    wrap.addEventListener('click', e=>{
+      const b = e.target.closest('.chip'); if(!b) return;
+      const key = b.dataset.range;
+      bhfCfg.ranges.has(key) ? bhfCfg.ranges.delete(key) : bhfCfg.ranges.add(key);
+      b.classList.toggle('active', bhfCfg.ranges.has(key));
+      updateBHFConfigTip(wrap);
+    });
+  }
+  function updateBHFConfigTip(wrap){
+    const tip = $('#bhfCfgTip');
+    if(tip) tip.textContent = (bhfCfg.ranges.size===0 && !$('.chip.active',wrap)) ? '请至少选择一个范围' : '';
+  }
+
+  // 生成一个百分数（最多 1 位小数）
+  function bhfGenPercent(){
+    const keys = Array.from(bhfCfg.ranges);
+    const key = keys[rand(0, keys.length-1)];
+    const [min, max] = BHF_RANGES[key];
+    const tenth = rand(min*10, max*10);
+    return tenth/10;
+  }
+  // 精确答案 = 1/(p/100) = 100/p，保留 1 位小数
+  function bhfAnswer(p){
+    const v = Math.round(1000/p)/10;   // 保留 1 位
+    return Math.round(v)===v ? Math.round(v) : v;
+  }
+  // 数值显示：去掉整数部分的尾随 .0（如 10.0 → 10）
+  function bhfStrip(v){
+    return Math.round(v)===v ? String(Math.round(v)) : String(v);
+  }
+  // 判题：用户答案相对精确答案误差 ≤ 2%
+  function bhfCheck(user, ans){
+    return Math.abs(user-ans)/ans <= 0.02;
+  }
+  // 输入清洗：仅保留数字与一个小数点，且最多一位小数
+  function bhfSanitize(v){
+    v = v.replace(/[^\d.]/g,'').replace(/(\..*)\./g,'$1');
+    const di = v.indexOf('.');
+    if(di >= 0) v = v.slice(0, di+2);
+    return v;
+  }
+
+  /* ---------- 百化分单题练习 ---------- */
+  const bhfSingle = {
+    questions:[], cur:null, curStart:0, start:0,
+    timer:null, autoNextTimer:null,
+    revealing:false, paused:false, pauseStart:0, pausedTotal:0
+  };
+
+  function startBHFHandSingle(){
+    lastPracticeSource = 'bhf';
+    bhfSingle.questions = [];
+    bhfSingle.start = Date.now();
+    bhfSingle.timer = setInterval(tickBHFHandSingle, 200);
+    go('bhf-single');
+    nextBHFHandSingle(true);
+  }
+
+  function tickBHFHandSingle(){
+    const now = bhfSingle.paused ? bhfSingle.pauseStart : Date.now();
+    const elapsed = (now - bhfSingle.start - bhfSingle.pausedTotal)/1000;
+    $('#bhfsTotalTime').textContent = fmtTime(elapsed);
+    const n = bhfSingle.questions.length;
+    $('#bhfsCount').textContent = n;
+    const correct = bhfSingle.questions.filter(q=>q.correct).length;
+    $('#bhfsAcc').textContent = n ? Math.round(correct/n*100)+'%' : '0%';
+    $('#bhfsAvg').textContent = (n ? (elapsed/n).toFixed(1) : '0.0')+'s';
+    if(bhfSingle.curStart){
+      const cur = (now - bhfSingle.curStart - bhfSingle.pausedTotal)/1000;
+      $('#bhfsCur').textContent = Math.max(0,cur).toFixed(1)+'s';
+    }
+  }
+
+  function toggleBHFHandPause(){
+    bhfSingle.paused = !bhfSingle.paused;
+    const btn = $('#bhfsPause');
+    const inp = $('#bhfsFracInput');
+    const numpadKeys = $$('.numpad-key', $('#bhfsNumpad'));
+    if(bhfSingle.paused){
+      bhfSingle.pauseStart = Date.now();
+      btn.textContent = '继续';
+      btn.classList.add('paused');
+      inp.disabled = true;
+      numpadKeys.forEach(k=>k.disabled = true);
+      clearTimeout(bhfSingle.autoNextTimer);
+    }else{
+      bhfSingle.pausedTotal += Date.now() - bhfSingle.pauseStart;
+      btn.textContent = '暂停';
+      btn.classList.remove('paused');
+      inp.disabled = false;
+      inp.readOnly = isTouchDevice();
+      numpadKeys.forEach(k=>k.disabled = false);
+      if(!isTouchDevice()) inp.focus();
+    }
+  }
+
+  function nextBHFHandSingle(isFirst){
+    if(bhfSingle.paused) toggleBHFHandPause();
+    if(!isFirst && bhfSingle.cur){
+      bhfSingle.questions.push({
+        percent: bhfSingle.cur.percent,
+        answer: bhfSingle.cur.answer,
+        user: null, correct: false,
+        usedSec: (Date.now()-bhfSingle.curStart)/1000
+      });
+    }
+    clearTimeout(bhfSingle.autoNextTimer);
+    bhfSingle.revealing = false;
+    if(bhfCfg.ranges.size===0) return;
+    const p = bhfGenPercent();
+    const ans = bhfAnswer(p);
+    bhfSingle.cur = { percent:p, answer:ans };
+    bhfSingle.curStart = Date.now();
+    $('#bhfsIndex').textContent = `第 ${bhfSingle.questions.length+1} 题`;
+    $('#bhfsExpr .bhf-expr-p').textContent = bhfStrip(p)+'%';
+    const inp = $('#bhfsFracInput');
+    inp.value = '';
+    inp.disabled = false;
+    inp.readOnly = isTouchDevice();
+    $$('.numpad-key', $('#bhfsNumpad')).forEach(k=>k.disabled = false);
+    $('#bhfsFeedback').className = 'feedback';
+    $('#bhfsFeedback').textContent = '';
+    if(!isTouchDevice()) inp.focus();
+  }
+
+  function submitBHFHandSingle(){
+    if(!bhfSingle.cur || bhfSingle.paused) return;
+    if(bhfSingle.revealing){ nextBHFHandSingle(); return; }
+    const raw = $('#bhfsFracInput').value.trim();
+    if(raw===''){ flashBHFHandFeedback('err','请输入分母'); return; }
+    const user = parseFloat(raw);
+    const ans = bhfSingle.cur.answer;
+    const correct = bhfCheck(user, ans);
+    const usedSec = (Date.now()-bhfSingle.curStart)/1000;
+    if(correct){
+      flashBHFHandFeedback('ok', `✓ 正确，分母约 ${ans}`);
+    }else{
+      flashBHFHandFeedback('err', `✗ 错误，精确值 ${ans}，误差 >2%`);
+    }
+    bhfSingle.questions.push({ percent:bhfSingle.cur.percent, answer:ans, user, correct, usedSec });
+    bhfSingle.cur = null;
+    const inp = $('#bhfsFracInput');
+    inp.disabled = true;
+    $$('.numpad-key', $('#bhfsNumpad')).forEach(k=>k.disabled = true);
+    bhfSingle.autoNextTimer = setTimeout(()=>nextBHFHandSingle(), correct?300:1200);
+  }
+
+  function revealBHFHandSingle(){
+    if(!bhfSingle.cur || bhfSingle.paused) return;
+    bhfSingle.revealing = true;
+    flashBHFHandFeedback('info', `答案：${bhfSingle.cur.answer}（点击"跳过"继续）`);
+    $('#bhfsFracInput').disabled = true;
+    $$('.numpad-key', $('#bhfsNumpad')).forEach(k=>k.disabled = true);
+    bhfSingle.questions.push({
+      percent: bhfSingle.cur.percent, answer: bhfSingle.cur.answer,
+      user: '(查看答案)', correct: false,
+      usedSec: (Date.now()-bhfSingle.curStart)/1000
+    });
+    bhfSingle.cur = null;
+  }
+
+  function endBHFHandSingle(){
+    if(bhfSingle.paused) toggleBHFHandPause();
+    bhfSingle.cur = null;
+    stopBHFHandSingleTimers();
+    showSummary({
+      type:'百化分练习（单题）',
+      questions: bhfSingle.questions.map(q=>({
+        expr: bhfStrip(q.percent)+'% = 1/？', answer: q.answer,
+        displayAnswer: String(q.answer), errorPct: '-',
+        userText: q.user===null ? '' : String(q.user), correct: q.correct, usedSec: q.usedSec
+      })),
+      totalSec: (Date.now()-bhfSingle.start)/1000
+    });
+  }
+
+  function stopBHFHandSingleTimers(){
+    clearInterval(bhfSingle.timer); bhfSingle.timer=null;
+    clearTimeout(bhfSingle.autoNextTimer); bhfSingle.autoNextTimer=null;
+  }
+  function flashBHFHandFeedback(type, msg){
+    const fb = $('#bhfsFeedback');
+    fb.className = 'feedback '+type;
+    fb.textContent = msg;
+  }
+
+  /* ---------- 百化分固定题数练习 ---------- */
+  const bhfFixed = { questions:[], start:0, timer:null };
+
+  function startBHFHandFixed(){
+    lastPracticeSource = 'bhf';
+    const n = bhfCfg.count;
+    if(bhfCfg.ranges.size===0) return;
+    bhfFixed.questions = [];
+    let lastP = null;
+    for(let i=0;i<n;i++){
+      let p = bhfGenPercent();
+      // 避免与上一题相同
+      if(bhfCfg.ranges.size>1){
+        for(let k=0;k<3 && lastP!==null && Math.abs(p-lastP)<0.05;k++){
+          p = bhfGenPercent();
+        }
+      }
+      bhfFixed.questions.push({ percent:p, answer:bhfAnswer(p), userText:'', correct:false, usedSec:0 });
+      lastP = p;
+    }
+    bhfFixed.start = Date.now();
+    const list = $('#bhfList');
+    list.innerHTML = '';
+    bhfFixed.questions.forEach((q,i)=>{
+      const item = document.createElement('div');
+      item.className = 'fixed-item';
+      item.innerHTML = `
+        <span class="fi-idx">${i+1}</span>
+        <span class="fi-expr">${bhfStrip(q.percent)}% = 1/</span>
+        <input class="fi-input" inputmode="decimal" autocomplete="off" data-i="${i}" placeholder="分母 ?" />
+      `;
+      list.appendChild(item);
+    });
+    list.addEventListener('input', onBHFHandFixedInput);
+    $('#bhfCount2').textContent = n;
+    bhfFixed.timer = setInterval(tickBHFHandFixed, 200);
+    go('bhf-fixed');
+  }
+
+  function onBHFHandFixedInput(e){
+    const inp = e.target.closest('.fi-input'); if(!inp) return;
+    const i = +inp.dataset.i;
+    const item = inp.closest('.fixed-item');
+    // 与单题模式保持一致：仅允许数字与一位小数
+    const clean = bhfSanitize(inp.value);
+    if(clean !== inp.value) inp.value = clean;
+    const val = inp.value.trim();
+    bhfFixed.questions[i].userText = val;
+    if(val===''){ item.classList.remove('done'); return; }
+    item.classList.add('done');
+    $('#bhfDone').textContent = bhfFixed.questions.filter(q=>q.userText!=='').length;
+  }
+
+  function tickBHFHandFixed(){
+    $('#bhfTotalTime').textContent = fmtTime((Date.now()-bhfFixed.start)/1000);
+    $('#bhfDone').textContent = bhfFixed.questions.filter(q=>q.userText!=='').length;
+  }
+
+  function submitBHFHandFixed(){
+    const totalSec = (Date.now()-bhfFixed.start)/1000;
+    const per = bhfFixed.questions.length ? totalSec/bhfFixed.questions.length : 0;
+    bhfFixed.questions.forEach(q=>{
+      const u = q.userText==='' ? null : parseFloat(q.userText);
+      if(u !== null){
+        q.correct = bhfCheck(u, q.answer);
+        q.userText = String(u);
+      }else{
+        q.correct = false;
+        q.userText = '未填';
+      }
+      q.usedSec = per;
+    });
+    stopBHFHandFixedTimers();
+    showSummary({
+      type:'百化分练习（固定题数）',
+      questions: bhfFixed.questions.map(q=>({
+        expr: bhfStrip(q.percent)+'% = 1/？', answer: q.answer,
+        displayAnswer: String(q.answer), errorPct: '-',
+        userText: q.userText, correct: q.correct, usedSec: q.usedSec
+      })),
+      totalSec
+    });
+  }
+
+  function stopBHFHandFixedTimers(){
+    clearInterval(bhfFixed.timer); bhfFixed.timer=null;
+  }
+  function stopBHFAllTimers(){
+    stopBHFHandSingleTimers();
+    stopBHFHandFixedTimers();
+  }
+
   /* ---------- 事件绑定 ---------- */
   function bind(){
     // 通用跳转
@@ -1246,6 +1712,9 @@
           showTip('当前配置无法生成有效题目，请调整位数范围（尤其是除法）');
           return;
         }
+        // 软键盘留白说明：乘/除才允许误差
+        const hasMult = cfg.ops.includes('mul') || cfg.ops.includes('div');
+        $('#numPadNote').textContent = hasMult ? '误差≤2%' : '';
         if(cfg.mode==='single') startSingle();
         else startFixed();
       }catch(err){
@@ -1297,6 +1766,7 @@
     // 结算页返回按钮
     $('#sumBack').addEventListener('click', ()=>{
       if(lastPracticeSource === 'square') openFormula('square');
+      else if(lastPracticeSource === 'bhf') openFormula('percent');
       else go('basic-config');
     });
 
@@ -1399,6 +1869,8 @@
         inp.value = inp.value.slice(0, -1);
         return;
       }
+      // 平方数答案为整数，小数点键仅保留布局、不产生输入
+      if(val === '.') return;
       const inp = $('#sqsInput');
       inp.value += val;
     });
@@ -1406,6 +1878,74 @@
     // 平方数固定题数
     $('#sqfConfirm').addEventListener('click', submitSqFixed);
     $('#sqfEnd').addEventListener('click', submitSqFixed);
+
+    // ---------- 百化分配置 ----------
+    initBHFChips();
+    // 绑定 bhfMode 到 bhfCfg
+    (function(){
+      const wrap = $('#bhfMode');
+      if(!wrap) return;
+      wrap.addEventListener('click', e=>{
+        const b = e.target.closest('.seg'); if(!b) return;
+        $$('.seg',wrap).forEach(x=>x.classList.remove('active'));
+        b.classList.add('active');
+        bhfCfg.mode = b.dataset.val;
+        const cw = $('#bhfFixedCountWrap');
+        if(cw) cw.style.display = bhfCfg.mode==='fixed' ? '' : 'none';
+      });
+    })();
+    // 绑定 bhfCount
+    (function(){
+      const wrap = $('#bhfCount');
+      if(!wrap) return;
+      wrap.addEventListener('click', e=>{
+        const b = e.target.closest('.seg'); if(!b) return;
+        $$('.seg',wrap).forEach(x=>x.classList.remove('active'));
+        b.classList.add('active');
+        bhfCfg.count = +b.dataset.val;
+      });
+    })();
+
+    // 百化分开始练习
+    $('#startBHF').addEventListener('click', ()=>{
+      if(bhfCfg.ranges.size===0){ updateBHFConfigTip($('#bhfRange')); return; }
+      if(bhfCfg.mode==='single') startBHFHandSingle();
+      else startBHFHandFixed();
+    });
+
+    // 百化分单题
+    $('#bhfsPause').addEventListener('click', toggleBHFHandPause);
+    $('#bhfsNext').addEventListener('click', ()=>nextBHFHandSingle());
+    $('#bhfsReveal').addEventListener('click', revealBHFHandSingle);
+    $('#bhfsEnd').addEventListener('click', endBHFHandSingle);
+    $('#bhfsFracInput').addEventListener('keydown', e=>{
+      if(e.key==='Enter' && !bhfSingle.paused){ e.preventDefault(); submitBHFHandSingle(); }
+    });
+    $('#bhfsFracInput').addEventListener('input', function(){
+      const s = bhfSanitize(this.value);
+      if(s !== this.value) this.value = s;
+    });
+    // 软键盘：仅允许一位小数的数字输入
+    $('#bhfsNumpad').addEventListener('click', e=>{
+      const key = e.target.closest('.numpad-key');
+      if(!key || key.disabled) return;
+      const val = key.dataset.key;
+      const inp = $('#bhfsFracInput');
+      if(val === 'confirm'){ submitBHFHandSingle(); return; }
+      if(val === 'clear'){ inp.value = ''; return; }
+      if(val === 'backspace'){ inp.value = inp.value.slice(0, -1); return; }
+      if(val === '.'){
+        if(inp.value.indexOf('.')>=0) return;
+        inp.value = bhfSanitize(inp.value + '.');
+        return;
+      }
+      if(val === '0' && inp.value==='') return;
+      inp.value = bhfSanitize(inp.value + val);
+    });
+
+    // 百化分固定题数
+    $('#bhfConfirm').addEventListener('click', submitBHFHandFixed);
+    $('#bhfEnd').addEventListener('click', submitBHFHandFixed);
   }
 
   /* ---------- 启动 ---------- */
