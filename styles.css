@@ -12,6 +12,7 @@
   --err:#dc2626;
   --err-bg:#fdeaea;
   --warn:#d97706;
+  --warn-bg:#fdf1e0;
   --radius:14px;
   --shadow:0 2px 14px rgba(30,50,90,.06);
   --shadow-lg:0 6px 24px rgba(30,50,90,.12);
@@ -280,9 +281,9 @@ body{
 .numpad{margin-top:14px;user-select:none;}
 .numpad-grid{
   display:grid;
-  grid-template-columns:repeat(3,1fr);
+  grid-template-columns:repeat(4,1fr);
   gap:6px;
-  max-width:320px;
+  max-width:340px;
   margin:0 auto;
 }
 .numpad-key{
@@ -294,15 +295,20 @@ body{
 .numpad-key:active{transform:scale(.95);background:#e8ecf5;}
 .numpad-key[disabled]{opacity:.4;cursor:not-allowed;transform:none;}
 .numpad-key-clear{
-  grid-column:span 2;
   font-size:16px;font-weight:500;color:var(--muted);
 }
 .numpad-key-confirm{
   background:var(--primary);color:#fff;border-color:var(--primary);
   font-size:16px;font-weight:600;
+  grid-column:4;grid-row:3 / 5;
 }
 .numpad-key-confirm:active{background:var(--primary-d);}
 .numpad-key-confirm[disabled]{background:var(--primary);opacity:.5;}
+/* 留白说明格（有允许误差时显示灰色小字说明） */
+.numpad-note{
+  display:flex;align-items:center;justify-content:center;
+  font-size:11px;color:var(--muted);line-height:1.2;
+}
 
 /* 结束练习按钮置左 */
 .btn-end{padding:6px 14px;font-size:13px;border-radius:8px;}
@@ -356,11 +362,13 @@ body{
 .detail-item.no-time{grid-template-columns:auto auto auto auto;}
 .detail-item.ok{background:var(--ok-bg);}
 .detail-item.err{background:var(--err-bg);}
+.detail-item.warn{background:var(--warn-bg);}
 .di-idx{font-size:12px;color:var(--muted);width:24px;}
 .di-q{font-weight:600;font-size:13px;}
 .di-a{font-weight:600;font-size:13px;}
 .di-a.ok{color:var(--ok);}
 .di-a.err{color:var(--err);}
+.di-a.warn{color:var(--warn);}
 .di-t{font-size:11px;color:var(--muted);min-width:40px;text-align:right;}
 .di-time{font-size:11px;color:var(--muted);min-width:40px;text-align:right;}
 .di-correct{font-size:12px;color:var(--muted);}
@@ -388,7 +396,19 @@ body{
   overflow-x:auto;
 }
 .formula-box .katex{font-size:1.25em;}
-.formula-desc{text-align:center;margin:0 0 6px;font-size:13px;}
+
+/* 百化分 U 型交互区 */
+.bhf-svg{display:block;width:100%;max-width:540px;margin:0 auto;cursor:crosshair;}
+.bhf-anchor{font-size:8px;fill:#5a6b8c;font-weight:600;pointer-events:none;user-select:none;}
+.bhf-p{font-size:8.5px;fill:#31487d;}
+.bhf-f{font-size:8px;font-weight:700;fill:#b0553b;}
+.bhf-ancg{pointer-events:none;}
+.bhf-tip{
+  position:absolute;display:none;pointer-events:none;z-index:12;
+  background:rgba(30,41,59,.92);color:#fff;font-size:12px;font-weight:600;
+  padding:4px 9px;border-radius:6px;white-space:nowrap;
+  box-shadow:0 2px 8px rgba(0,0,0,.2);
+}
 .placeholder{text-align:center;padding:18px 10px;}
 .ph-icon{font-size:38px;display:block;margin-bottom:6px;}
 .back-btn{margin-bottom:8px;}
@@ -415,7 +435,22 @@ body{
   text-align:center;font-family:monospace;
 }
 
-/* 平方数键盘确认按钮独占一行 */
-.numpad-key.sq-confirm{
-  grid-column:1 / -1;
+/* 百化分练习 - 分数上下结构表达式 */
+.bhf-expr{
+  display:flex;align-items:center;justify-content:center;gap:12px;
+  font-size:20px;margin:6px 0 12px;
 }
+.bhf-expr-p{font-size:22px;font-weight:700;white-space:nowrap;}
+.bhf-expr-eq{font-size:20px;color:var(--muted);font-weight:700;}
+/* 百分数、等号：固定高度并内部垂直居中，使字形中心与分数线对齐 */
+.bhf-expr-p,.bhf-expr-eq{display:flex;align-items:center;height:26px;line-height:1;}
+.bhf-frac{display:inline-flex;flex-direction:column;align-items:center;}
+.bhf-frac-num{font-size:18px;font-weight:700;line-height:26px;height:26px;}
+.bhf-frac-bar{width:100%;border-top:2px solid var(--ink);margin:2px 0;}
+.bhf-frac-den{
+  width:72px;height:26px;border:none;border-bottom:2px solid var(--primary);
+  text-align:center;font-size:18px;font-weight:700;line-height:26px;
+  padding:0 4px;background:transparent;color:var(--ink);outline:none;
+}
+.bhf-frac-den:focus{border-bottom-color:var(--primary);}
+.bhf-frac-den:disabled{opacity:.5;}
