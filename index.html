@@ -161,16 +161,17 @@
             <button class="numpad-key" data-key="1">1</button>
             <button class="numpad-key" data-key="2">2</button>
             <button class="numpad-key" data-key="3">3</button>
+            <button class="numpad-key" data-key="backspace">←</button>
             <button class="numpad-key" data-key="4">4</button>
             <button class="numpad-key" data-key="5">5</button>
             <button class="numpad-key" data-key="6">6</button>
+            <button class="numpad-key numpad-key-clear" data-key="clear">清空</button>
             <button class="numpad-key" data-key="7">7</button>
             <button class="numpad-key" data-key="8">8</button>
             <button class="numpad-key" data-key="9">9</button>
             <button class="numpad-key" data-key=".">.</button>
             <button class="numpad-key" data-key="0">0</button>
-            <button class="numpad-key" data-key="backspace">←</button>
-            <button class="numpad-key numpad-key-clear" data-key="clear">清空</button>
+            <div class="numpad-note" id="numPadNote"></div>
             <button class="numpad-key numpad-key-confirm" data-key="confirm">确认</button>
           </div>
         </div>
@@ -274,7 +275,37 @@
           <h2 id="fdTitle">公式练习</h2>
         </div>
         <div class="formula-box" id="fdFormula"></div>
-        <p class="muted formula-desc" id="fdDesc"></p>
+        <!-- 百化分练习配置 -->
+        <div id="fdPercentConfig" style="display:none;">
+          <div class="cfg-group">
+            <label class="cfg-label">选择范围（多选）</label>
+            <div class="square-range-grid" id="bhfRange">
+              <button class="chip" data-range="1-10">1%~10%</button>
+              <button class="chip" data-range="10-20">10%~20%</button>
+              <button class="chip" data-range="20-50">20%~50%</button>
+            </div>
+          </div>
+          <div class="cfg-group">
+            <label class="cfg-label">题型类别</label>
+            <div class="seg-row seg-row-compact" id="bhfMode">
+              <button class="seg active" data-val="single">单题练习</button>
+              <button class="seg" data-val="fixed">固定题数</button>
+            </div>
+          </div>
+          <div class="cfg-group" id="bhfFixedCountWrap" style="display:none;">
+            <label class="cfg-label">题目数量</label>
+            <div class="seg-row" id="bhfCount">
+              <button class="seg active" data-val="5">5 题</button>
+              <button class="seg" data-val="10">10 题</button>
+              <button class="seg" data-val="15">15 题</button>
+              <button class="seg" data-val="20">20 题</button>
+            </div>
+          </div>
+          <div class="cfg-actions cfg-actions-single">
+            <button class="btn btn-primary full" id="startBHF">开始练习</button>
+          </div>
+          <p class="muted cfg-tip" id="bhfCfgTip"></p>
+        </div>
         <!-- 平方数练习配置 -->
         <div id="fdSquareConfig" style="display:none;">
           <div class="cfg-group">
@@ -347,16 +378,18 @@
             <button class="numpad-key" data-key="1">1</button>
             <button class="numpad-key" data-key="2">2</button>
             <button class="numpad-key" data-key="3">3</button>
+            <button class="numpad-key" data-key="backspace">←</button>
             <button class="numpad-key" data-key="4">4</button>
             <button class="numpad-key" data-key="5">5</button>
             <button class="numpad-key" data-key="6">6</button>
+            <button class="numpad-key numpad-key-clear" data-key="clear">清空</button>
             <button class="numpad-key" data-key="7">7</button>
             <button class="numpad-key" data-key="8">8</button>
             <button class="numpad-key" data-key="9">9</button>
-            <button class="numpad-key" data-key="clear">清空</button>
+            <button class="numpad-key" data-key=".">.</button>
             <button class="numpad-key" data-key="0">0</button>
-            <button class="numpad-key" data-key="backspace">←</button>
-            <button class="numpad-key numpad-key-confirm sq-confirm" data-key="confirm">确认</button>
+            <div class="numpad-note" id="sqsPadNote"></div>
+            <button class="numpad-key numpad-key-confirm" data-key="confirm">确认</button>
           </div>
         </div>
       </div>
@@ -377,6 +410,76 @@
         <div class="fixed-list" id="sqfList"></div>
         <div class="btn-row">
           <button class="btn btn-primary" id="sqfConfirm">提交结算</button>
+        </div>
+      </div>
+    </section>
+
+  <!-- ============ 百化分练习 - 单题 ============ -->
+    <section class="view" data-view="bhf-single">
+      <div class="stats-bar">
+        <div class="stat"><span class="stat-k">总时长</span><span class="stat-v" id="bhfsTotalTime">00:00</span></div>
+        <div class="stat"><span class="stat-k">题数</span><span class="stat-v" id="bhfsCount">0</span></div>
+        <div class="stat"><span class="stat-k">正确率</span><span class="stat-v" id="bhfsAcc">0%</span></div>
+        <div class="stat"><span class="stat-k">均/题</span><span class="stat-v" id="bhfsAvg">0.0s</span></div>
+        <div class="stat"><span class="stat-k">本题</span><span class="stat-v" id="bhfsCur">0.0s</span></div>
+      </div>
+      <div class="card question-card">
+        <div class="q-header">
+          <button class="btn btn-danger-ghost btn-end" id="bhfsEnd">结束练习</button>
+          <div class="q-index" id="bhfsIndex">第 1 题</div>
+          <button class="btn btn-pause" id="bhfsPause">暂停</button>
+        </div>
+        <div class="q-expr bhf-expr" id="bhfsExpr">
+          <span class="bhf-expr-p">—</span>
+          <span class="bhf-expr-eq">=</span>
+          <span class="bhf-frac">
+            <span class="bhf-frac-num">1</span>
+            <span class="bhf-frac-bar"></span>
+            <input class="bhf-frac-den" id="bhfsFracInput" inputmode="decimal" placeholder="?" autocomplete="off" />
+          </span>
+        </div>
+        <div class="feedback" id="bhfsFeedback"></div>
+        <div class="btn-row">
+          <button class="btn btn-line" id="bhfsNext">跳过</button>
+          <button class="btn btn-line" id="bhfsReveal">查看答案</button>
+        </div>
+        <div class="numpad" id="bhfsNumpad">
+          <div class="numpad-grid">
+            <button class="numpad-key" data-key="1">1</button>
+            <button class="numpad-key" data-key="2">2</button>
+            <button class="numpad-key" data-key="3">3</button>
+            <button class="numpad-key" data-key="backspace">←</button>
+            <button class="numpad-key" data-key="4">4</button>
+            <button class="numpad-key" data-key="5">5</button>
+            <button class="numpad-key" data-key="6">6</button>
+            <button class="numpad-key numpad-key-clear" data-key="clear">清空</button>
+            <button class="numpad-key" data-key="7">7</button>
+            <button class="numpad-key" data-key="8">8</button>
+            <button class="numpad-key" data-key="9">9</button>
+            <button class="numpad-key" data-key=".">.</button>
+            <button class="numpad-key" data-key="0">0</button>
+            <div class="numpad-note" id="bhfPadNote">误差≤2%</div>
+            <button class="numpad-key numpad-key-confirm" data-key="confirm">确认</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 百化分练习 - 固定题数 ============ -->
+    <section class="view" data-view="bhf-fixed">
+      <div class="stats-bar">
+        <div class="stat"><span class="stat-k">总时长</span><span class="stat-v" id="bhfTotalTime">00:00</span></div>
+        <div class="stat"><span class="stat-k">题数</span><span class="stat-v" id="bhfCount2">0</span></div>
+        <div class="stat"><span class="stat-k">已答</span><span class="stat-v" id="bhfDone">0</span></div>
+      </div>
+      <div class="card fixed-list-card">
+        <div class="q-header" style="margin-bottom:10px;">
+          <button class="btn btn-danger-ghost btn-end" id="bhfEnd">结束练习</button>
+          <div style="flex:1;"></div>
+        </div>
+        <div class="fixed-list" id="bhfList"></div>
+        <div class="btn-row">
+          <button class="btn btn-primary" id="bhfConfirm">提交结算</button>
         </div>
       </div>
     </section>
