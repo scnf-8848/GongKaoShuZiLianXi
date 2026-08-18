@@ -1000,7 +1000,7 @@
     if(key === 'square'){
       const cells = [];
       for(let i=1;i<=30;i++){
-        cells.push(`<span>${i}²=${i*i}</span>`);
+        cells.push(`<span><b>${i}<sup>2</sup></b><i>=${i*i}</i></span>`);
       }
       el.innerHTML = '<div class="square-table">'+cells.join('')+'</div>';
     }else if(key === 'percent'){
