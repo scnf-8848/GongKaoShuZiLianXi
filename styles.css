@@ -89,6 +89,11 @@ body{
 /* ============ 配置项 ============ */
 .cfg-group{margin-top:16px;}
 .cfg-label{display:block;font-size:13px;color:var(--muted);margin-bottom:8px;font-weight:500;}
+/* 配置标签与勾选框同行 */
+.cfg-label-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px;}
+.cfg-label-row .cfg-label{margin-bottom:0;}
+.bhf-limit{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);cursor:pointer;user-select:none;}
+.bhf-limit input{width:16px;height:16px;margin:0;accent-color:var(--primary);cursor:pointer;}
 .chip-row,.seg-row{display:flex;flex-wrap:wrap;gap:8px;}
 .chip,.seg{
   border:1px solid var(--line);background:#fff;color:var(--ink);
