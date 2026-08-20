@@ -851,6 +851,8 @@
     arc:[9.5,10,10.5],                                                                      // 半圆弧（左→底部10→右）
     right:[11,11.5,12,13,14,15,16,17,18,19,20,23,25,27,30,35,40,45,50] // 右臂（下→上）
   };
+  // 上图标注的全部百分数（供“仅从上图百分数中出题”使用）
+  const BHF_PRESET_ALL = [].concat(BHF_PRESET.left, BHF_PRESET.arc, BHF_PRESET.right);
 
   function renderBHF(el){
     const ARCLO=9, ARCCTR=10, ARCHI=11;   // 半圆弧：左端9 → 中心10(最底部) → 右端11，保证10在弧正中
@@ -1349,7 +1351,7 @@
      在选中范围内随机生成最多 1 位小数的百分数 p，
      用户回答对应分数 1/(100/p) 的分母，精确答案保留 1 位小数，允许误差 2%。 */
   const BHF_RANGES = { '1-10':[1,10], '10-20':[10,20], '20-50':[20,50] };
-  const bhfCfg = { ranges:new Set(), mode:'single', count:5 };
+  const bhfCfg = { ranges:new Set(), mode:'single', count:5, limitPreset:false };
 
   function initBHFChips(){
     const wrap = $('#bhfRange');
@@ -1361,6 +1363,8 @@
       b.classList.toggle('active', bhfCfg.ranges.has(key));
       updateBHFConfigTip(wrap);
     });
+    const lim = $('#bhfLimitPreset');
+    if(lim) lim.addEventListener('change', ()=> bhfCfg.limitPreset = lim.checked);
   }
   function updateBHFConfigTip(wrap){
     const tip = $('#bhfCfgTip');
@@ -1370,6 +1374,15 @@
   // 生成一个百分数（最多 1 位小数）
   function bhfGenPercent(){
     const keys = Array.from(bhfCfg.ranges);
+    // 勾选“仅从上图百分数中出题”时：在预设值中筛选落在所选范围内的值
+    if(bhfCfg.limitPreset){
+      const cands = [];
+      keys.forEach(key=>{
+        const [min, max] = BHF_RANGES[key];
+        BHF_PRESET_ALL.forEach(p=>{ if(p>=min && p<=max) cands.push(p); });
+      });
+      if(cands.length) return cands[rand(0, cands.length-1)];
+    }
     const key = keys[rand(0, keys.length-1)];
     const [min, max] = BHF_RANGES[key];
     const tenth = rand(min*10, max*10);
@@ -1387,6 +1400,18 @@
   // 判题：用户答案相对精确答案误差 ≤ 2%
   function bhfCheck(user, ans){
     return Math.abs(user-ans)/ans <= 0.02;
+  }
+  // 用户答案相对精确答案的误差百分比显示（未作答/查看答案等返回 '-'）
+  function bhfErrPct(user, ans){
+    if(user===null || user===undefined) return '-';
+    if(typeof user === 'string'){
+      if(user==='' || user==='未填' || user==='(查看答案)') return '-';
+    }
+    const u = +user; if(isNaN(u) || ans===0) return '-';
+    const pct = Math.abs(u-ans)/Math.abs(ans)*100;
+    if(pct < 0.005) return '0%';
+    if(pct < 0.01) return '<0.01%';
+    return pct.toFixed(1)+'%';
   }
   // 输入清洗：仅保留数字与一个小数点，且最多一位小数
   function bhfSanitize(v){
@@ -1523,7 +1548,7 @@
       type:'百化分练习（单题）',
       questions: bhfSingle.questions.map(q=>({
         expr: bhfStrip(q.percent)+'% = 1/？', answer: q.answer,
-        displayAnswer: String(q.answer), errorPct: '-',
+        displayAnswer: String(q.answer), errorPct: bhfErrPct(q.user, q.answer),
         userText: q.user===null ? '' : String(q.user), correct: q.correct, usedSec: q.usedSec
       })),
       totalSec: (Date.now()-bhfSingle.start)/1000
@@ -1617,7 +1642,7 @@
       type:'百化分练习（固定题数）',
       questions: bhfFixed.questions.map(q=>({
         expr: bhfStrip(q.percent)+'% = 1/？', answer: q.answer,
-        displayAnswer: String(q.answer), errorPct: '-',
+        displayAnswer: String(q.answer), errorPct: bhfErrPct(q.userText, q.answer),
         userText: q.userText, correct: q.correct, usedSec: q.usedSec
       })),
       totalSec
