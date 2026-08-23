@@ -218,6 +218,12 @@
       </div>
       <div class="card">
         <h3>题目明细</h3>
+        <div class="seg-row sum-filter" id="sumFilter">
+          <button class="seg active" data-f="all">全部</button>
+          <button class="seg" data-f="ok">正确 (0)</button>
+          <button class="seg" data-f="warn">接近 (0)</button>
+          <button class="seg" data-f="err">错误 (0)</button>
+        </div>
         <div class="detail-list" id="sumDetail"></div>
       </div>
     </section>
@@ -298,6 +304,12 @@
               <button class="seg" data-val="fixed">固定题数</button>
             </div>
           </div>
+          <div class="cfg-group" id="bhfRepeatWrongWrap">
+            <label class="bhf-limit">
+              <input type="checkbox" id="bhfRepeatWrong" />
+              <span>错题重复：答错后在下一题重复，直至答对</span>
+            </label>
+          </div>
           <div class="cfg-group" id="bhfFixedCountWrap" style="display:none;">
             <label class="cfg-label">题目数量</label>
             <div class="seg-row" id="bhfCount">
@@ -331,6 +343,12 @@
               <button class="seg active" data-val="single">单题练习</button>
               <button class="seg" data-val="fixed">固定题数</button>
             </div>
+          </div>
+          <div class="cfg-group" id="sqRepeatWrongWrap">
+            <label class="bhf-limit">
+              <input type="checkbox" id="sqRepeatWrong" />
+              <span>错题重复：答错后在下一题重复，直至答对</span>
+            </label>
           </div>
           <div class="cfg-group" id="sqFixedCountWrap" style="display:none;">
             <label class="cfg-label">题目数量</label>
