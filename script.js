@@ -245,6 +245,7 @@
 
   function startSingle(){
     lastPracticeSource = 'basic';
+    recordLaunch('basic', cfg);
     single.questions = [];
     single.start = Date.now();
     single.timer = setInterval(tickSingle,200);
@@ -541,6 +542,7 @@
 
   function startFixed(){
     lastPracticeSource = 'basic';
+    recordLaunch('basic', cfg);
     const n = cfg.count;
     const isChoice = cfg.answer === 'choice';
     fixed.questions = [];
@@ -676,14 +678,21 @@
 
   /* ---------- 结算页 ---------- */
   let lastSummary = null;
-  let lastConfigSnapshot = null;
+  let lastLaunch = null;      // 最近一次真实练习的启动描述 {source, config}
+  let activeLaunch = null;    // 当前结算页“再来一次”使用的启动描述
   let lastPracticeSource = 'basic';
+  let summaryFromHistory = false;   // 当前结算是否为历史回看（决定“返回”去向）
 
-  function showSummary(data, persist=true){
+  // 记录一次练习的启动描述，供“再来一次”重用
+  function recordLaunch(source, config){
+    lastLaunch = { source, config: JSON.parse(JSON.stringify(config)) };
+  }
+
+  function showSummary(data, persist=true, launch){
     lastSummary = data;
-    if(persist){
-      lastConfigSnapshot = JSON.parse(JSON.stringify(cfg));
-    }
+    summaryFromHistory = !persist;   // 仅历史回看以 persist=false 调用
+    // “再来一次”用的启动描述：显式传入（历史回看）优先，否则用最近一次真实练习
+    activeLaunch = launch || lastLaunch;
     const qs = data.questions;
     const total = data.totalSec;
     const correct = qs.filter(q=>q.correct).length;
@@ -696,48 +705,11 @@
     $('#sumTime').textContent = fmtTime(total);
     $('#sumAvg').textContent = avg.toFixed(1)+'s';
 
-    const detail = $('#sumDetail');
-    const isFixed = data.type.includes('固定题数');
-    detail.className = 'detail-list' + (isFixed ? ' no-time' : '');
-    detail.innerHTML = '';
-    const isFill = data.answerMode !== 'choice';   // 填空模式（含平方数练习）
-    // 各练习的允许误差上限（%）：乘/除、百化分为 2%；加/减、平方数为精确匹配
-    let allowedErr = 2;
-    if(data.type.includes('平方数')) allowedErr = 0;
-    function errPctOf(q){
-      const user = q.user!==undefined ? q.user : q.userText;
-      const ans = q.answer;
-      if(user===null || user===undefined || ans===0) return null;
-      if(typeof user === 'string'){ if(user==='未填'||user==='(查看答案)'||user===''||isNaN(parseFloat(user))) return null; }
-      const u = +user; if(isNaN(u)) return null;
-      if(u === ans) return 0;
-      return Math.abs(u-ans)/Math.abs(ans)*100;
-    }
-    qs.forEach((q,i)=>{
-      // 颜色分级：误差<1% 绿；1%~允许上限 橙；超限 红
-      const err = errPctOf(q);
-      let tier = 'err';
-      if(q.correct){
-        if(err === null || err < 1) tier = 'ok';
-        else if(err <= allowedErr) tier = 'warn';
-      }
-      const row = document.createElement('div');
-      row.className = 'detail-item ' + tier + (isFixed?' no-time':'');
-      const da = q.displayAnswer || String(q.answer);
-      const ep = q.errorPct || '-';
-      const tm = (!isFixed && q.usedSec !== undefined) ? q.usedSec.toFixed(1)+'s' : '';
-      const userVal = q.userText!==undefined ? q.userText : (q.user!==undefined ? q.user : '');
-      row.innerHTML = `
-        <span class="di-idx">${i+1}</span>
-        <span class="di-q">${q.expr} = ${da}</span>
-        <span class="di-a ${tier}">${q.correct ? (isFill ? '✔ ' + userVal : '✔') : ('✘ ' + userVal)}</span>
-        <span class="di-t">${ep}</span>
-        ${isFixed ? '' : `<span class="di-time">${tm}</span>`}
-      `;
-      detail.appendChild(row);
-    });
+    summaryFilter = 'all';
+    renderSummaryDetails();
+    refreshSumFilter();
 
-    // 保存记录（历史回看不重复保存）
+    // 保存记录（历史回看不重复保存）；同时存入启动描述供历史“再来一次”重跑
     if(persist){
       saveRecord({
         type: data.type,
@@ -747,6 +719,7 @@
         acc,
         totalSec: total,
         avgSec: avg,
+        launch: lastLaunch ? JSON.parse(JSON.stringify(lastLaunch)) : null,
         questions: qs.map(q=>({
           expr:q.expr, answer:q.answer,
           displayAnswer: q.displayAnswer || String(q.answer),
@@ -758,6 +731,141 @@
     }
 
     go('summary');
+  }
+
+  /* 统一重跑一次练习：根据启动描述恢复配置并进入对应练习。
+     source: 'basic' | 'square' | 'bhf' ；config 为对应模块配置的快照。 */
+  function launchPractice(source, config){
+    if(source === 'square'){
+      squareCfg.ranges = config.ranges.slice();
+      squareCfg.mode = config.mode || 'single';
+      squareCfg.count = config.count || 5;
+      squareCfg.repeatWrong = !!config.repeatWrong;
+      syncSquareCfgUI();
+      if(squareCfg.mode==='single') startSquareSingle();
+      else startSquareFixed();
+    }else if(source === 'bhf'){
+      bhfCfg.ranges = new Set(config.ranges);
+      bhfCfg.mode = config.mode || 'single';
+      bhfCfg.count = config.count || 5;
+      bhfCfg.limitPreset = !!config.limitPreset;
+      bhfCfg.repeatWrong = !!config.repeatWrong;
+      syncBHFCfgUI();
+      if(bhfCfg.mode==='single') startBHFHandSingle();
+      else startBHFHandFixed();
+    }else{
+      Object.assign(cfg, config);
+      // 同步基本计算 UI 选中态（兼容字符串/数字混合）
+      ['cfgOps','cfgA','cfgB'].forEach((id,key)=>{
+        const k = ['ops','aDigits','bDigits'][key];
+        const parent = $('#'+id); if(!parent) return;
+        $$('.chip',parent).forEach(c=>{
+          c.classList.toggle('active', cfg[k].some(v=>String(v)===String(c.dataset.val)));
+        });
+      });
+      const modeWrap = $('#cfgMode'), countWrap = $('#cfgCount');
+      if(modeWrap) $$('.seg',modeWrap).forEach(s=>s.classList.toggle('active', String(s.dataset.val)===String(cfg.mode)));
+      if(countWrap) $$('.seg',countWrap).forEach(s=>s.classList.toggle('active', +s.dataset.val===+cfg.count));
+      const ansWrap = $('#cfgAnswer');
+      if(ansWrap) $$('.seg',ansWrap).forEach(s=>s.classList.toggle('active', String(s.dataset.val)===String(cfg.answer)));
+      const fixedWrap = $('#fixedCountWrap');
+      if(fixedWrap) fixedWrap.style.display = cfg.mode==='fixed'?'':'none';
+      if(cfg.mode==='single') startSingle(); else startFixed();
+    }
+  }
+  // 平方数配置 UI 与 squareCfg 状态保持一致
+  function syncSquareCfgUI(){
+    const rangeWrap = $('#squareRange');
+    if(rangeWrap) $$('.chip',rangeWrap).forEach(c=>{
+      c.classList.toggle('active', squareCfg.ranges.indexOf(+c.dataset.range) > -1);
+    });
+    bindSegTo('sqMode', squareCfg.mode);
+    bindSegTo('sqCount', squareCfg.count);
+    const rw = $('#sqRepeatWrongWrap'); if(rw) rw.style.display = squareCfg.mode==='single' ? '' : 'none';
+    const fw = $('#sqFixedCountWrap'); if(fw) fw.style.display = squareCfg.mode==='fixed' ? '' : 'none';
+    const cb = $('#sqRepeatWrong'); if(cb) cb.checked = squareCfg.repeatWrong;
+  }
+  // 百化分配置 UI 与 bhfCfg 状态保持一致
+  function syncBHFCfgUI(){
+    const rangeWrap = $('#bhfRange');
+    if(rangeWrap) $$('.chip',rangeWrap).forEach(c=>{
+      c.classList.toggle('active', bhfCfg.ranges.has(c.dataset.range));
+    });
+    bindSegTo('bhfMode', bhfCfg.mode);
+    bindSegTo('bhfCount', bhfCfg.count);
+    const rw = $('#bhfRepeatWrongWrap'); if(rw) rw.style.display = bhfCfg.mode==='single' ? '' : 'none';
+    const fw = $('#bhfFixedCountWrap'); if(fw) fw.style.display = bhfCfg.mode==='fixed' ? '' : 'none';
+    const lim = $('#bhfLimitPreset'); if(lim) lim.checked = bhfCfg.limitPreset;
+    const cb = $('#bhfRepeatWrong'); if(cb) cb.checked = bhfCfg.repeatWrong;
+  }
+  // 通用：将某个 seg 组的高亮设为指定值
+  function bindSegTo(id, val){
+    const wrap = $('#'+id); if(!wrap) return;
+    $$('.seg',wrap).forEach(s=>s.classList.toggle('active', String(s.dataset.val)===String(val)));
+  }
+
+  /* ---------- 结算明细筛选 ---------- */
+  let summaryFilter = 'all';   // all | ok | warn | err
+  // 计算某题的分类档位：ok=正确, warn=接近, err=错误
+  function summaryTierOf(q){
+    let allowedErr = 2;
+    if(lastSummary && lastSummary.type.includes('平方数')) allowedErr = 0;
+    if(!q.correct) return 'err';
+    const err = summaryErrPctOf(q);
+    if(err === null || err < 1) return 'ok';
+    return err <= allowedErr ? 'warn' : 'err';
+  }
+  function summaryErrPctOf(q){
+    const user = q.user!==undefined ? q.user : q.userText;
+    const ans = q.answer;
+    if(user===null || user===undefined || ans===0) return null;
+    if(typeof user === 'string'){ if(user==='未填'||user==='(查看答案)'||user===''||isNaN(parseFloat(user))) return null; }
+    const u = +user; if(isNaN(u)) return null;
+    if(u === ans) return 0;
+    return Math.abs(u-ans)/Math.abs(ans)*100;
+  }
+  // 更新筛选按钮的计数
+  function refreshSumFilter(){
+    if(!lastSummary) return;
+    const qs = lastSummary.questions;
+    const cnt = { all:qs.length, ok:0, warn:0, err:0 };
+    qs.forEach(q=>cnt[summaryTierOf(q)]++);
+    ['ok','warn','err'].forEach(k=>{
+      const b = $(`#sumFilter .seg[data-f="${k}"]`);
+      if(b) b.textContent = ({ok:'正确',warn:'接近',err:'错误'})[k] + ` (${cnt[k]})`;
+    });
+    const allB = $('#sumFilter .seg[data-f="all"]');
+    if(allB) allB.textContent = `全部 (${cnt.all})`;
+    $$('#sumFilter .seg').forEach(x=>x.classList.toggle('active', x.dataset.f === summaryFilter));
+  }
+  // 按当前筛选渲染明细
+  function renderSummaryDetails(){
+    if(!lastSummary) return;
+    const data = lastSummary;
+    const detail = $('#sumDetail');
+    if(!detail) return;
+    const isFixed = data.type.includes('固定题数');
+    detail.className = 'detail-list' + (isFixed ? ' no-time' : '');
+    detail.innerHTML = '';
+    const isFill = data.answerMode !== 'choice';   // 填空模式（含平方数练习）
+    const qs = data.questions.filter(q=> summaryFilter==='all' || summaryTierOf(q)===summaryFilter);
+    qs.forEach((q, di)=>{
+      const tier = summaryTierOf(q);
+      const row = document.createElement('div');
+      row.className = 'detail-item ' + tier + (isFixed?' no-time':'');
+      const da = q.displayAnswer || String(q.answer);
+      const ep = q.errorPct || '-';
+      const tm = (!isFixed && q.usedSec !== undefined) ? q.usedSec.toFixed(1)+'s' : '';
+      const userVal = q.userText!==undefined ? q.userText : (q.user!==undefined ? q.user : '');
+      row.innerHTML = `
+        <span class="di-idx">${di+1}</span>
+        <span class="di-q">${q.expr} = ${da}</span>
+        <span class="di-a ${tier}">${q.correct ? (isFill ? '✔ ' + userVal : '✔') : ('✘ ' + userVal)}</span>
+        <span class="di-t">${ep}</span>
+        ${isFixed ? '' : `<span class="di-time">${tm}</span>`}
+      `;
+      detail.appendChild(row);
+    });
   }
 
   /* ---------- 历史记录 ---------- */
@@ -812,7 +920,7 @@
         userText: q.user, correct:q.correct, usedSec:q.usedSec, user:q.user
       })),
       totalSec: r.totalSec
-    }, false);
+    }, false, r.launch);
   }
 
   /* ---------- 公式计算（KaTeX 数学公式渲染） ---------- */
@@ -1051,7 +1159,7 @@
     '16-20':[16,17,18,19,20], '21-25':[21,22,23,24,25], '26-30':[26,27,28,29,30]
   };
 
-  const squareCfg = { ranges:[], mode:'single', count:5 };
+  const squareCfg = { ranges:[], mode:'single', count:5, repeatWrong:false };
 
   function initSquareChips(){
     const wrap = $('#squareRange');
@@ -1086,12 +1194,16 @@
   const sqSingle = {
     questions:[], cur:null, curStart:0, start:0,
     timer:null, autoNextTimer:null,
+    // 错题重复：记下待重做的错题数，达到“答错→重复，答对→换新题”
+    pending:null,
     revealing:false, paused:false, pauseStart:0, pausedTotal:0
   };
 
   function startSquareSingle(){
     lastPracticeSource = 'square';
+    recordLaunch('square', { ranges: squareCfg.ranges.slice(), mode: squareCfg.mode, count: squareCfg.count, repeatWrong: squareCfg.repeatWrong });
     sqSingle.questions = [];
+    sqSingle.pending = null;
     sqSingle.start = Date.now();
     sqSingle.timer = setInterval(tickSqSingle, 200);
     go('square-single');
@@ -1150,11 +1262,14 @@
     }
     clearTimeout(sqSingle.autoNextTimer);
     sqSingle.revealing = false;
-    // 从选中范围中随机选数，避免连续重复
+    // 从选中范围中随机选数，避免连续重复；若非空待重做错题，则优先重做该题
     const pool = squareCfg.ranges;
     if(pool.length===0) return;
     let next;
-    if(pool.length>1 && sqSingle.cur !== null){
+    if(sqSingle.pending !== null){
+      next = sqSingle.pending;   // 重做错题
+      sqSingle.pending = null;   // 消费掉，答错时在提交处重新入队直至答对
+    }else if(pool.length>1 && sqSingle.cur !== null){
       const filtered = pool.filter(n=>n!==sqSingle.cur);
       next = filtered[rand(0, filtered.length-1)];
     }else{
@@ -1195,6 +1310,7 @@
     }else{
       $('#sqsFeedback').className = 'feedback err';
       $('#sqsFeedback').textContent = `✗ 错误，正确答案：${sqSingle.cur*sqSingle.cur}`;
+      if(squareCfg.repeatWrong) sqSingle.pending = sqSingle.cur;   // 错题重做
       sqSingle.questions.push({
         number: sqSingle.cur, answer: sqSingle.cur*sqSingle.cur,
         user, correct: false, usedSec
@@ -1214,6 +1330,7 @@
     $('#sqsFeedback').textContent = `答案：${ans}（点击"跳过"继续）`;
     $('#sqsInput').disabled = true;
     $$('.numpad-key', $('#sqsNumpad')).forEach(k=>k.disabled = true);
+    if(squareCfg.repeatWrong) sqSingle.pending = sqSingle.cur;   // 查看答案视同答错，重做
     sqSingle.questions.push({
       number: sqSingle.cur, answer: ans,
       user: '(查看答案)', correct: false,
@@ -1252,6 +1369,7 @@
 
   function startSquareFixed(){
     lastPracticeSource = 'square';
+    recordLaunch('square', { ranges: squareCfg.ranges.slice(), mode: squareCfg.mode, count: squareCfg.count, repeatWrong: squareCfg.repeatWrong });
     const n = squareCfg.count;
     const pool = squareCfg.ranges;
     if(pool.length===0) return;
@@ -1351,7 +1469,7 @@
      在选中范围内随机生成最多 1 位小数的百分数 p，
      用户回答对应分数 1/(100/p) 的分母，精确答案保留 1 位小数，允许误差 2%。 */
   const BHF_RANGES = { '1-10':[1,10], '10-20':[10,20], '20-50':[20,50] };
-  const bhfCfg = { ranges:new Set(), mode:'single', count:5, limitPreset:false };
+  const bhfCfg = { ranges:new Set(), mode:'single', count:5, limitPreset:false, repeatWrong:false };
 
   function initBHFChips(){
     const wrap = $('#bhfRange');
@@ -1425,12 +1543,16 @@
   const bhfSingle = {
     questions:[], cur:null, curStart:0, start:0,
     timer:null, autoNextTimer:null,
+    // 错题重复：记下待重做的错题百分数
+    pending:null,
     revealing:false, paused:false, pauseStart:0, pausedTotal:0
   };
 
   function startBHFHandSingle(){
     lastPracticeSource = 'bhf';
+    recordLaunch('bhf', { ranges: [...bhfCfg.ranges], mode: bhfCfg.mode, count: bhfCfg.count, limitPreset: bhfCfg.limitPreset, repeatWrong: bhfCfg.repeatWrong });
     bhfSingle.questions = [];
+    bhfSingle.pending = null;
     bhfSingle.start = Date.now();
     bhfSingle.timer = setInterval(tickBHFHandSingle, 200);
     go('bhf-single');
@@ -1488,7 +1610,8 @@
     clearTimeout(bhfSingle.autoNextTimer);
     bhfSingle.revealing = false;
     if(bhfCfg.ranges.size===0) return;
-    const p = bhfGenPercent();
+    // 若非空待重做错题，则用该百分数重做；否则重新随机生成
+    const p = bhfSingle.pending !== null ? (()=>{ const v=bhfSingle.pending; bhfSingle.pending=null; return v; })() : bhfGenPercent();
     const ans = bhfAnswer(p);
     bhfSingle.cur = { percent:p, answer:ans };
     bhfSingle.curStart = Date.now();
@@ -1517,6 +1640,7 @@
       flashBHFHandFeedback('ok', `✓ 正确，分母约 ${ans}`);
     }else{
       flashBHFHandFeedback('err', `✗ 错误，精确值 ${ans}，误差 >2%`);
+      if(bhfCfg.repeatWrong) bhfSingle.pending = bhfSingle.cur.percent;   // 错题重做
     }
     bhfSingle.questions.push({ percent:bhfSingle.cur.percent, answer:ans, user, correct, usedSec });
     bhfSingle.cur = null;
@@ -1532,6 +1656,7 @@
     flashBHFHandFeedback('info', `答案：${bhfSingle.cur.answer}（点击"跳过"继续）`);
     $('#bhfsFracInput').disabled = true;
     $$('.numpad-key', $('#bhfsNumpad')).forEach(k=>k.disabled = true);
+    if(bhfCfg.repeatWrong) bhfSingle.pending = bhfSingle.cur.percent;   // 查看答案视同答错，重做
     bhfSingle.questions.push({
       percent: bhfSingle.cur.percent, answer: bhfSingle.cur.answer,
       user: '(查看答案)', correct: false,
@@ -1570,6 +1695,7 @@
 
   function startBHFHandFixed(){
     lastPracticeSource = 'bhf';
+    recordLaunch('bhf', { ranges: [...bhfCfg.ranges], mode: bhfCfg.mode, count: bhfCfg.count, limitPreset: bhfCfg.limitPreset, repeatWrong: bhfCfg.repeatWrong });
     const n = bhfCfg.count;
     if(bhfCfg.ranges.size===0) return;
     bhfFixed.questions = [];
@@ -1790,33 +1916,29 @@
 
     // 结算页返回按钮
     $('#sumBack').addEventListener('click', ()=>{
+      if(summaryFromHistory){ go('history'); return; }   // 历史回看 → 返回历史列表
       if(lastPracticeSource === 'square') openFormula('square');
       else if(lastPracticeSource === 'bhf') openFormula('percent');
       else go('basic-config');
     });
 
-    // 结算页再来一次（按上次配置）
-    $('#sumAgain').addEventListener('click', ()=>{
-      if(!lastConfigSnapshot) { go('home'); return; }
-      Object.assign(cfg, JSON.parse(JSON.stringify(lastConfigSnapshot)));
-      // 同步 UI 选中态（兼容字符串/数字混合的历史快照）
-      ['cfgOps','cfgA','cfgB'].forEach((id,key)=>{
-        const k = ['ops','aDigits','bDigits'][key];
-        const parent = $('#'+id);
-        if(!parent) return;
-        $$('.chip',parent).forEach(c=>{
-          const has = cfg[k].some(v=>String(v)===String(c.dataset.val));
-          c.classList.toggle('active', has);
-        });
+    // 结算明细筛选
+    (function(){
+      const wrap = $('#sumFilter');
+      if(!wrap) return;
+      wrap.addEventListener('click', e=>{
+        const b = e.target.closest('.seg'); if(!b) return;
+        summaryFilter = b.dataset.f;
+        refreshSumFilter();
+        renderSummaryDetails();
       });
-      const modeWrap = $('#cfgMode'), countWrap = $('#cfgCount');
-      if(modeWrap) $$('.seg',modeWrap).forEach(s=>s.classList.toggle('active', String(s.dataset.val)===String(cfg.mode)));
-      if(countWrap) $$('.seg',countWrap).forEach(s=>s.classList.toggle('active', +s.dataset.val===+cfg.count));
-      const ansWrap = $('#cfgAnswer');
-      if(ansWrap) $$('.seg',ansWrap).forEach(s=>s.classList.toggle('active', String(s.dataset.val)===String(cfg.answer)));
-      $('#fixedCountWrap').style.display = cfg.mode==='fixed'?'':'none';
+    })();
+
+    // 结算页再来一次（按当前结算的启动描述重跑：正常练习用最近一次，历史回看用记录里的 launch）
+    $('#sumAgain').addEventListener('click', ()=>{
+      if(!activeLaunch){ go('home'); return; }
       try{
-        if(cfg.mode==='single') startSingle(); else startFixed();
+        launchPractice(activeLaunch.source, activeLaunch.config);
       }catch(err){
         console.error(err);
         $('#cfgTip') && ($('#cfgTip').textContent = '启动失败：'+err.message);
@@ -1847,7 +1969,14 @@
         squareCfg.mode = b.dataset.val;
         const cw = $('#sqFixedCountWrap');
         if(cw) cw.style.display = squareCfg.mode==='fixed' ? '' : 'none';
+        const rw = $('#sqRepeatWrongWrap');
+        if(rw) rw.style.display = squareCfg.mode==='single' ? '' : 'none';
       });
+    })();
+    // 绑定平方数错题重复勾选框
+    (function(){
+      const cb = $('#sqRepeatWrong');
+      if(cb) cb.addEventListener('change', ()=> squareCfg.repeatWrong = cb.checked);
     })();
     // 重新绑定 sqCount
     (function(){
@@ -1917,7 +2046,14 @@
         bhfCfg.mode = b.dataset.val;
         const cw = $('#bhfFixedCountWrap');
         if(cw) cw.style.display = bhfCfg.mode==='fixed' ? '' : 'none';
+        const rw = $('#bhfRepeatWrongWrap');
+        if(rw) rw.style.display = bhfCfg.mode==='single' ? '' : 'none';
       });
+    })();
+    // 绑定百化分错题重复勾选框
+    (function(){
+      const cb = $('#bhfRepeatWrong');
+      if(cb) cb.addEventListener('change', ()=> bhfCfg.repeatWrong = cb.checked);
     })();
     // 绑定 bhfCount
     (function(){
