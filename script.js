@@ -163,14 +163,8 @@
     const correct = roundTo(q.answer, dec);          // 正确项
     const opts = [correct];
 
-    // 正确答案为 0（或极接近 0）的退化情况：用小的整数值作干扰项
-    if(Math.abs(correct) < 1e-9){
-      const pool = [1,-1,2,-2,3,-3];
-      for(let i=0; opts.length<4 && i<pool.length; i++){
-        if(!opts.includes(pool[i])) opts.push(pool[i]);
-      }
-    }else if(Math.abs(correct) < 10){
-      // 个位数：绝对偏移 ±1,±2,±3…
+    if(Math.abs(correct) < 10){
+      // 个位数（含答案为 0）：绝对偏移 ±1,±2,±3…
       const offsets = [1,-1,2,-2,3,-3,4,-4,5,-5,10,-10];
       for(const k of offsets){
         if(opts.length >= 4) break;
@@ -719,6 +713,7 @@
         acc,
         totalSec: total,
         avgSec: avg,
+        allowedErr: data.allowedErr,
         launch: lastLaunch ? JSON.parse(JSON.stringify(lastLaunch)) : null,
         questions: qs.map(q=>({
           expr:q.expr, answer:q.answer,
@@ -808,12 +803,16 @@
   let summaryFilter = 'all';   // all | ok | warn | err
   // 计算某题的分类档位：ok=正确, warn=接近, err=错误
   function summaryTierOf(q){
-    let allowedErr = 2;
-    if(lastSummary && lastSummary.type.includes('平方数')) allowedErr = 0;
+    let E = 2;
+    if(lastSummary && lastSummary.type.includes('百化分'))
+      E = lastSummary.allowedErr !== undefined ? lastSummary.allowedErr : bhfAllowedErr();
+    else if(lastSummary && lastSummary.type.includes('平方数')) E = 0;
     if(!q.correct) return 'err';
+    if(E <= 0) return 'ok';   // 平方数：无容差，判题即分对错
     const err = summaryErrPctOf(q);
-    if(err === null || err < 1) return 'ok';
-    return err <= allowedErr ? 'warn' : 'err';
+    // 「接近」界限 = 「错误」界限的一半：错误2%则接近1%，错误1%则接近0.5%
+    if(err === null || err < E/2) return 'ok';
+    return err <= E ? 'warn' : 'err';
   }
   function summaryErrPctOf(q){
     const user = q.user!==undefined ? q.user : q.userText;
@@ -919,7 +918,8 @@
         errorPct: q.errorPct || '-',
         userText: q.user, correct:q.correct, usedSec:q.usedSec, user:q.user
       })),
-      totalSec: r.totalSec
+      totalSec: r.totalSec,
+      allowedErr: r.allowedErr
     }, false, r.launch);
   }
 
@@ -1190,6 +1190,50 @@
     tip.textContent = squareCfg.ranges.length===0 ? '请至少选择一个数字范围' : '';
   }
 
+  /* ---------- 单题模式动态出题频率 ----------
+     记忆仅限本次练习（内存权重表，练习开始时重置，结束即丢弃）：
+     - 答对且用时 ≤ ADAPT_FAST_SEC → 权重减半，出现频率降低（视为熟练掌握）
+     - 答对但超时                 → 权重不变
+     - 答错 / 查看答案            → 权重翻倍；若翻倍后仍 <1 则置 1（曾做对已降频的题又答错 → 恢复正常频率重新来过）
+     仅单题模式启用（单题才有逐题用时）；固定题数模式保持随机均匀。 */
+  const ADAPT_FAST_SEC = 3;             // 快速答对阈值（秒），可按需调整
+  const ADAPT_MIN = 0.125, ADAPT_MAX = 8;  // 权重夹取范围，防止某一题频率失控
+  let adaptW = null;                    // 本次练习的权重表 { key: 权重 }，默认 1
+
+  function adaptReset(){
+    adaptW = {};
+  }
+  function adaptKey(val){
+    return String(val);
+  }
+  function adaptWt(val){
+    const w = adaptW[adaptKey(val)];
+    return (typeof w === 'number' && w > 0) ? w : 1;
+  }
+  // 答题后更新权重
+  function adaptUpdate(val, correct, usedSec){
+    const w = adaptWt(val);
+    let nw;
+    if(correct && usedSec <= ADAPT_FAST_SEC) nw = w * 0.5;
+    else if(correct) nw = w;
+    else{
+      nw = w * 2;
+      if(nw < 1) nw = 1;   // 曾做对已降频的题又答错 → 恢复正常频率，重新来过
+    }
+    adaptW[adaptKey(val)] = Math.min(ADAPT_MAX, Math.max(ADAPT_MIN, nw));
+  }
+  // 加权随机选一：权重越大越可能被选中（返回池中元素）
+  function adaptPick(pool){
+    const ws = pool.map(adaptWt);
+    const sum = ws.reduce((a,b)=>a+b, 0);
+    let r = Math.random() * sum;
+    for(let i=0;i<pool.length;i++){
+      r -= ws[i];
+      if(r <= 0) return pool[i];
+    }
+    return pool[pool.length-1];
+  }
+
   /* ---------- 平方数单题练习 ---------- */
   const sqSingle = {
     questions:[], cur:null, curStart:0, start:0,
@@ -1202,6 +1246,7 @@
   function startSquareSingle(){
     lastPracticeSource = 'square';
     recordLaunch('square', { ranges: squareCfg.ranges.slice(), mode: squareCfg.mode, count: squareCfg.count, repeatWrong: squareCfg.repeatWrong });
+    adaptReset();   // 本次练习的记忆频率从零开始
     sqSingle.questions = [];
     sqSingle.pending = null;
     sqSingle.start = Date.now();
@@ -1271,9 +1316,9 @@
       sqSingle.pending = null;   // 消费掉，答错时在提交处重新入队直至答对
     }else if(pool.length>1 && sqSingle.cur !== null){
       const filtered = pool.filter(n=>n!==sqSingle.cur);
-      next = filtered[rand(0, filtered.length-1)];
+      next = adaptPick(filtered);   // 加权随机：熟题出现频率低，错题出现频率高
     }else{
-      next = pool[rand(0, pool.length-1)];
+      next = adaptPick(pool);
     }
     sqSingle.cur = next;
     sqSingle.curStart = Date.now();
@@ -1296,6 +1341,7 @@
     const user = parseInt(raw, 10);
     const correct = user === sqSingle.cur * sqSingle.cur;
     const usedSec = (Date.now()-sqSingle.curStart)/1000;
+    adaptUpdate(sqSingle.cur, correct, usedSec);   // 更新本题频率
     if(correct){
       $('#sqsFeedback').className = 'feedback ok';
       $('#sqsFeedback').textContent = '✓ 正确';
@@ -1326,6 +1372,7 @@
     if(!sqSingle.cur || sqSingle.paused) return;
     sqSingle.revealing = true;
     const ans = sqSingle.cur * sqSingle.cur;
+    adaptUpdate(sqSingle.cur, false, (Date.now()-sqSingle.curStart)/1000);   // 查看答案视同答错，提高频率
     $('#sqsFeedback').className = 'feedback info';
     $('#sqsFeedback').textContent = `答案：${ans}（点击"跳过"继续）`;
     $('#sqsInput').disabled = true;
@@ -1467,9 +1514,15 @@
 
   /* ---------- 百化分练习 ----------
      在选中范围内随机生成最多 1 位小数的百分数 p，
-     用户回答对应分数 1/(100/p) 的分母，精确答案保留 1 位小数，允许误差 2%。 */
+     用户回答对应分数 1/(100/p) 的分母，精确答案保留 1 位小数。
+     允许误差：默认 2%；勾选“仅从上图百分数中出题”（limitPreset）时收紧到 1%。 */
   const BHF_RANGES = { '1-10':[1,10], '10-20':[10,20], '20-50':[20,50] };
   const bhfCfg = { ranges:new Set(), mode:'single', count:5, limitPreset:false, repeatWrong:false };
+
+  // 百化分允许误差（%）：勾选“仅从上图百分数中出题”时收紧到 1%，否则 2%
+  function bhfAllowedErr(){
+    return bhfCfg.limitPreset ? 1 : 2;
+  }
 
   function initBHFChips(){
     const wrap = $('#bhfRange');
@@ -1489,22 +1542,33 @@
     if(tip) tip.textContent = (bhfCfg.ranges.size===0 && !$('.chip.active',wrap)) ? '请至少选择一个范围' : '';
   }
 
+  // 候选百分数池：勾选“仅从上图百分数中出题”时返回按所选范围筛选的预设值；
+  // 未勾选时返回 null（随机小数的连续池，不参与频率记忆）
+  function bhfCandidates(){
+    if(!bhfCfg.limitPreset) return null;
+    const keys = Array.from(bhfCfg.ranges);
+    const cands = [];
+    keys.forEach(key=>{
+      const [min, max] = BHF_RANGES[key];
+      BHF_PRESET_ALL.forEach(p=>{ if(p>=min && p<=max) cands.push(p); });
+    });
+    return cands.length ? cands : null;
+  }
   // 生成一个百分数（最多 1 位小数）
   function bhfGenPercent(){
+    const cands = bhfCandidates();
+    if(cands) return cands[rand(0, cands.length-1)];
     const keys = Array.from(bhfCfg.ranges);
-    // 勾选“仅从上图百分数中出题”时：在预设值中筛选落在所选范围内的值
-    if(bhfCfg.limitPreset){
-      const cands = [];
-      keys.forEach(key=>{
-        const [min, max] = BHF_RANGES[key];
-        BHF_PRESET_ALL.forEach(p=>{ if(p>=min && p<=max) cands.push(p); });
-      });
-      if(cands.length) return cands[rand(0, cands.length-1)];
-    }
     const key = keys[rand(0, keys.length-1)];
     const [min, max] = BHF_RANGES[key];
     const tenth = rand(min*10, max*10);
     return tenth/10;
+  }
+  // 单题模式的百分数生成：仅图出题时按记忆频率加权选预设值，否则走均匀随机
+  function bhfGenPercentAdapt(){
+    const cands = bhfCandidates();
+    if(!cands) return bhfGenPercent();
+    return adaptPick(cands);
   }
   // 精确答案 = 1/(p/100) = 100/p，保留 1 位小数
   function bhfAnswer(p){
@@ -1515,9 +1579,9 @@
   function bhfStrip(v){
     return Math.round(v)===v ? String(Math.round(v)) : String(v);
   }
-  // 判题：用户答案相对精确答案误差 ≤ 2%
+  // 判题：用户答案相对精确答案误差 ≤ 允许误差（默认 2%，勾选上图预设时 1%）
   function bhfCheck(user, ans){
-    return Math.abs(user-ans)/ans <= 0.02;
+    return Math.abs(user-ans)/ans <= bhfAllowedErr()/100;
   }
   // 用户答案相对精确答案的误差百分比显示（未作答/查看答案等返回 '-'）
   function bhfErrPct(user, ans){
@@ -1551,6 +1615,8 @@
   function startBHFHandSingle(){
     lastPracticeSource = 'bhf';
     recordLaunch('bhf', { ranges: [...bhfCfg.ranges], mode: bhfCfg.mode, count: bhfCfg.count, limitPreset: bhfCfg.limitPreset, repeatWrong: bhfCfg.repeatWrong });
+    adaptReset();   // 本次练习的记忆频率从零开始
+    const note = $('#bhfPadNote'); if(note) note.textContent = '误差≤' + bhfAllowedErr() + '%';
     bhfSingle.questions = [];
     bhfSingle.pending = null;
     bhfSingle.start = Date.now();
@@ -1611,7 +1677,7 @@
     bhfSingle.revealing = false;
     if(bhfCfg.ranges.size===0) return;
     // 若非空待重做错题，则用该百分数重做；否则重新随机生成
-    const p = bhfSingle.pending !== null ? (()=>{ const v=bhfSingle.pending; bhfSingle.pending=null; return v; })() : bhfGenPercent();
+    const p = bhfSingle.pending !== null ? (()=>{ const v=bhfSingle.pending; bhfSingle.pending=null; return v; })() : bhfGenPercentAdapt();
     const ans = bhfAnswer(p);
     bhfSingle.cur = { percent:p, answer:ans };
     bhfSingle.curStart = Date.now();
@@ -1636,10 +1702,11 @@
     const ans = bhfSingle.cur.answer;
     const correct = bhfCheck(user, ans);
     const usedSec = (Date.now()-bhfSingle.curStart)/1000;
+    if(bhfCfg.limitPreset) adaptUpdate(bhfSingle.cur.percent, correct, usedSec);   // 仅图出题时更新频率
     if(correct){
       flashBHFHandFeedback('ok', `✓ 正确，分母约 ${ans}`);
     }else{
-      flashBHFHandFeedback('err', `✗ 错误，精确值 ${ans}，误差 >2%`);
+      flashBHFHandFeedback('err', `✗ 错误，精确值 ${ans}，误差 >${bhfAllowedErr()}%`);
       if(bhfCfg.repeatWrong) bhfSingle.pending = bhfSingle.cur.percent;   // 错题重做
     }
     bhfSingle.questions.push({ percent:bhfSingle.cur.percent, answer:ans, user, correct, usedSec });
@@ -1653,6 +1720,7 @@
   function revealBHFHandSingle(){
     if(!bhfSingle.cur || bhfSingle.paused) return;
     bhfSingle.revealing = true;
+    if(bhfCfg.limitPreset) adaptUpdate(bhfSingle.cur.percent, false, (Date.now()-bhfSingle.curStart)/1000);   // 查看答案视同答错，提高频率
     flashBHFHandFeedback('info', `答案：${bhfSingle.cur.answer}（点击"跳过"继续）`);
     $('#bhfsFracInput').disabled = true;
     $$('.numpad-key', $('#bhfsNumpad')).forEach(k=>k.disabled = true);
@@ -1676,7 +1744,8 @@
         displayAnswer: String(q.answer), errorPct: bhfErrPct(q.user, q.answer),
         userText: q.user===null ? '' : String(q.user), correct: q.correct, usedSec: q.usedSec
       })),
-      totalSec: (Date.now()-bhfSingle.start)/1000
+      totalSec: (Date.now()-bhfSingle.start)/1000,
+      allowedErr: bhfAllowedErr()
     });
   }
 
@@ -1771,7 +1840,8 @@
         displayAnswer: String(q.answer), errorPct: bhfErrPct(q.userText, q.answer),
         userText: q.userText, correct: q.correct, usedSec: q.usedSec
       })),
-      totalSec
+      totalSec,
+      allowedErr: bhfAllowedErr()
     });
   }
 
