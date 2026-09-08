@@ -241,6 +241,8 @@
     lastPracticeSource = 'basic';
     recordLaunch('basic', cfg);
     single.questions = [];
+    single.paused = false;   // 重置暂停状态，避免沿用上次练习的累计暂停时长导致计时为负
+    single.pausedTotal = 0;
     single.start = Date.now();
     single.timer = setInterval(tickSingle,200);
     go('single');
@@ -260,7 +262,7 @@
     $('#sAcc').textContent = acc+'%';
     $('#sAvg').textContent = (n? (elapsed/n).toFixed(1):'0.0')+'s';
     if(single.curStart){
-      const cur = (now - single.curStart - single.pausedTotal)/1000;
+      const cur = (now - single.curStart)/1000;
       $('#sCur').textContent = Math.max(0,cur).toFixed(1)+'s';
     }
   }
@@ -281,7 +283,9 @@
       // 清除自动跳转（暂停时不应跳题）
       clearTimeout(single.autoNextTimer);
     } else {
-      single.pausedTotal += Date.now() - single.pauseStart;
+      const pausedMs = Date.now() - single.pauseStart;
+      single.pausedTotal += pausedMs;
+      single.curStart += pausedMs;   // 当前题开始时间后移，使该题用时不含暂停
       btn.textContent = '暂停';
       btn.classList.remove('paused');
       inp.disabled = false;
@@ -453,7 +457,7 @@
     showSummary({
       type:'单题练习',
       questions: single.questions,
-      totalSec: (Date.now()-single.start)/1000,
+      totalSec: (Date.now()-single.start - single.pausedTotal)/1000,   // 扣除暂停时长，统计纯练习用时
       answerMode: cfg.answer
     });
   }
@@ -801,16 +805,27 @@
 
   /* ---------- 结算明细筛选 ---------- */
   let summaryFilter = 'all';   // all | ok | warn | err
-  // 计算某题的分类档位：ok=正确, warn=接近, err=错误
-  function summaryTierOf(q){
-    let E = 2;
+  // 本次结算的允许误差（%）：百化分依配置（1 或 2），平方数无容差为 0，其余为 2
+  function summaryErrBound(){
     if(lastSummary && lastSummary.type.includes('百化分'))
-      E = lastSummary.allowedErr !== undefined ? lastSummary.allowedErr : bhfAllowedErr();
-    else if(lastSummary && lastSummary.type.includes('平方数')) E = 0;
+      return lastSummary.allowedErr !== undefined ? lastSummary.allowedErr : bhfAllowedErr();
+    if(lastSummary && lastSummary.type.includes('平方数')) return 0;
+    return 2;
+  }
+  // 档位按钮文案（含误差范围）：优秀=误差<允许一半，合格=误差在允许内，不合格=超差或答错
+  function tierLabel(k){
+    const E = summaryErrBound();
+    if(E <= 0) return { ok:'优秀', warn:'合格', err:'不合格' }[k];   // 平方数无误差概念，只分对错
+    const half = E/2;
+    return { ok:`优秀（<${half}%）`, warn:`合格（${half}%~${E}%）`, err:`不合格（>${E}%）` }[k];
+  }
+  // 计算某题的分类档位：ok=优秀, warn=合格, err=不合格
+  function summaryTierOf(q){
+    const E = summaryErrBound();
     if(!q.correct) return 'err';
     if(E <= 0) return 'ok';   // 平方数：无容差，判题即分对错
     const err = summaryErrPctOf(q);
-    // 「接近」界限 = 「错误」界限的一半：错误2%则接近1%，错误1%则接近0.5%
+    // 「合格」界限 = 「不合格」界限的一半：不合格2%则合格1%，不合格1%则合格0.5%
     if(err === null || err < E/2) return 'ok';
     return err <= E ? 'warn' : 'err';
   }
@@ -831,7 +846,7 @@
     qs.forEach(q=>cnt[summaryTierOf(q)]++);
     ['ok','warn','err'].forEach(k=>{
       const b = $(`#sumFilter .seg[data-f="${k}"]`);
-      if(b) b.textContent = ({ok:'正确',warn:'接近',err:'错误'})[k] + ` (${cnt[k]})`;
+      if(b) b.textContent = tierLabel(k) + ` (${cnt[k]})`;
     });
     const allB = $('#sumFilter .seg[data-f="all"]');
     if(allB) allB.textContent = `全部 (${cnt.all})`;
@@ -1192,9 +1207,10 @@
 
   /* ---------- 单题模式动态出题频率 ----------
      记忆仅限本次练习（内存权重表，练习开始时重置，结束即丢弃）：
-     - 答对且用时 ≤ ADAPT_FAST_SEC → 权重减半，出现频率降低（视为熟练掌握）
-     - 答对但超时                 → 权重不变
+     - 答对且用时 ≤ ADAPT_FAST_SEC 且零误差 → 权重减半，出现频率降低（视为熟练掌握）
+     - 答对但超时，或判对但带误差（如百化分合格档）→ 权重不变
      - 答错 / 查看答案            → 权重翻倍；若翻倍后仍 <1 则置 1（曾做对已降频的题又答错 → 恢复正常频率重新来过）
+     - 勾选“错题重复”时的重做作答（pending 补考）不参与频率调整，仅首次作答计入
      仅单题模式启用（单题才有逐题用时）；固定题数模式保持随机均匀。 */
   const ADAPT_FAST_SEC = 3;             // 快速答对阈值（秒），可按需调整
   const ADAPT_MIN = 0.125, ADAPT_MAX = 8;  // 权重夹取范围，防止某一题频率失控
@@ -1210,11 +1226,11 @@
     const w = adaptW[adaptKey(val)];
     return (typeof w === 'number' && w > 0) ? w : 1;
   }
-  // 答题后更新权重
-  function adaptUpdate(val, correct, usedSec){
+  // 答题后更新权重；exact 表示是否零误差作答（有允许误差的练习中，判对但带误差不降频）
+  function adaptUpdate(val, correct, usedSec, exact){
     const w = adaptWt(val);
     let nw;
-    if(correct && usedSec <= ADAPT_FAST_SEC) nw = w * 0.5;
+    if(correct && usedSec <= ADAPT_FAST_SEC && exact) nw = w * 0.5;
     else if(correct) nw = w;
     else{
       nw = w * 2;
@@ -1240,6 +1256,8 @@
     timer:null, autoNextTimer:null,
     // 错题重复：记下待重做的错题数，达到“答错→重复，答对→换新题”
     pending:null,
+    // 当前题是否为错题重做（重做不计入出题频率调整）
+    isRepeat:false,
     revealing:false, paused:false, pauseStart:0, pausedTotal:0
   };
 
@@ -1249,6 +1267,8 @@
     adaptReset();   // 本次练习的记忆频率从零开始
     sqSingle.questions = [];
     sqSingle.pending = null;
+    sqSingle.paused = false;   // 重置暂停状态，避免沿用上次练习的累计暂停时长导致计时为负
+    sqSingle.pausedTotal = 0;
     sqSingle.start = Date.now();
     sqSingle.timer = setInterval(tickSqSingle, 200);
     go('square-single');
@@ -1266,7 +1286,7 @@
     $('#sqsAcc').textContent = acc+'%';
     $('#sqsAvg').textContent = (n ? (elapsed/n).toFixed(1) : '0.0')+'s';
     if(sqSingle.curStart){
-      const cur = (now - sqSingle.curStart - sqSingle.pausedTotal)/1000;
+      const cur = (now - sqSingle.curStart)/1000;
       $('#sqsCur').textContent = Math.max(0,cur).toFixed(1)+'s';
     }
   }
@@ -1284,7 +1304,9 @@
       numpadKeys.forEach(k=>k.disabled = true);
       clearTimeout(sqSingle.autoNextTimer);
     }else{
-      sqSingle.pausedTotal += Date.now() - sqSingle.pauseStart;
+      const pausedMs = Date.now() - sqSingle.pauseStart;
+      sqSingle.pausedTotal += pausedMs;
+      sqSingle.curStart += pausedMs;   // 当前题开始时间后移，使该题用时不含暂停
       btn.textContent = '暂停';
       btn.classList.remove('paused');
       inp.disabled = false;
@@ -1314,11 +1336,15 @@
     if(sqSingle.pending !== null){
       next = sqSingle.pending;   // 重做错题
       sqSingle.pending = null;   // 消费掉，答错时在提交处重新入队直至答对
-    }else if(pool.length>1 && sqSingle.cur !== null){
-      const filtered = pool.filter(n=>n!==sqSingle.cur);
-      next = adaptPick(filtered);   // 加权随机：熟题出现频率低，错题出现频率高
+      sqSingle.isRepeat = true;  // 错题重做不计入频率调整
     }else{
-      next = adaptPick(pool);
+      sqSingle.isRepeat = false;
+      if(pool.length>1 && sqSingle.cur !== null){
+        const filtered = pool.filter(n=>n!==sqSingle.cur);
+        next = adaptPick(filtered);   // 加权随机：熟题出现频率低，错题出现频率高
+      }else{
+        next = adaptPick(pool);
+      }
     }
     sqSingle.cur = next;
     sqSingle.curStart = Date.now();
@@ -1341,7 +1367,7 @@
     const user = parseInt(raw, 10);
     const correct = user === sqSingle.cur * sqSingle.cur;
     const usedSec = (Date.now()-sqSingle.curStart)/1000;
-    adaptUpdate(sqSingle.cur, correct, usedSec);   // 更新本题频率
+    if(!sqSingle.isRepeat) adaptUpdate(sqSingle.cur, correct, usedSec, correct);   // 平方数为整数精确匹配，判对即零误差
     if(correct){
       $('#sqsFeedback').className = 'feedback ok';
       $('#sqsFeedback').textContent = '✓ 正确';
@@ -1372,7 +1398,7 @@
     if(!sqSingle.cur || sqSingle.paused) return;
     sqSingle.revealing = true;
     const ans = sqSingle.cur * sqSingle.cur;
-    adaptUpdate(sqSingle.cur, false, (Date.now()-sqSingle.curStart)/1000);   // 查看答案视同答错，提高频率
+    if(!sqSingle.isRepeat) adaptUpdate(sqSingle.cur, false, (Date.now()-sqSingle.curStart)/1000, false);   // 查看答案视同答错，提高频率；重做不计
     $('#sqsFeedback').className = 'feedback info';
     $('#sqsFeedback').textContent = `答案：${ans}（点击"跳过"继续）`;
     $('#sqsInput').disabled = true;
@@ -1397,7 +1423,7 @@
         displayAnswer: String(q.answer), errorPct: '-',
         userText: String(q.user), correct: q.correct, usedSec: q.usedSec
       })),
-      totalSec: (Date.now()-sqSingle.start)/1000
+      totalSec: (Date.now()-sqSingle.start - sqSingle.pausedTotal)/1000   // 扣除暂停时长，统计纯练习用时
     });
   }
 
@@ -1609,6 +1635,8 @@
     timer:null, autoNextTimer:null,
     // 错题重复：记下待重做的错题百分数
     pending:null,
+    // 当前题是否为错题重做（重做不计入出题频率调整）
+    isRepeat:false,
     revealing:false, paused:false, pauseStart:0, pausedTotal:0
   };
 
@@ -1619,6 +1647,8 @@
     const note = $('#bhfPadNote'); if(note) note.textContent = '误差≤' + bhfAllowedErr() + '%';
     bhfSingle.questions = [];
     bhfSingle.pending = null;
+    bhfSingle.paused = false;   // 重置暂停状态，避免沿用上次练习的累计暂停时长导致计时为负
+    bhfSingle.pausedTotal = 0;
     bhfSingle.start = Date.now();
     bhfSingle.timer = setInterval(tickBHFHandSingle, 200);
     go('bhf-single');
@@ -1635,7 +1665,7 @@
     $('#bhfsAcc').textContent = n ? Math.round(correct/n*100)+'%' : '0%';
     $('#bhfsAvg').textContent = (n ? (elapsed/n).toFixed(1) : '0.0')+'s';
     if(bhfSingle.curStart){
-      const cur = (now - bhfSingle.curStart - bhfSingle.pausedTotal)/1000;
+      const cur = (now - bhfSingle.curStart)/1000;
       $('#bhfsCur').textContent = Math.max(0,cur).toFixed(1)+'s';
     }
   }
@@ -1653,7 +1683,9 @@
       numpadKeys.forEach(k=>k.disabled = true);
       clearTimeout(bhfSingle.autoNextTimer);
     }else{
-      bhfSingle.pausedTotal += Date.now() - bhfSingle.pauseStart;
+      const pausedMs = Date.now() - bhfSingle.pauseStart;
+      bhfSingle.pausedTotal += pausedMs;
+      bhfSingle.curStart += pausedMs;   // 当前题开始时间后移，使该题用时不含暂停
       btn.textContent = '暂停';
       btn.classList.remove('paused');
       inp.disabled = false;
@@ -1676,8 +1708,10 @@
     clearTimeout(bhfSingle.autoNextTimer);
     bhfSingle.revealing = false;
     if(bhfCfg.ranges.size===0) return;
-    // 若非空待重做错题，则用该百分数重做；否则重新随机生成
-    const p = bhfSingle.pending !== null ? (()=>{ const v=bhfSingle.pending; bhfSingle.pending=null; return v; })() : bhfGenPercentAdapt();
+    // 若非空待重做错题，则用该百分数重做（不计频率调整）；否则重新随机生成
+    const isRepeat = bhfSingle.pending !== null;
+    const p = isRepeat ? (()=>{ const v=bhfSingle.pending; bhfSingle.pending=null; return v; })() : bhfGenPercentAdapt();
+    bhfSingle.isRepeat = isRepeat;
     const ans = bhfAnswer(p);
     bhfSingle.cur = { percent:p, answer:ans };
     bhfSingle.curStart = Date.now();
@@ -1702,7 +1736,8 @@
     const ans = bhfSingle.cur.answer;
     const correct = bhfCheck(user, ans);
     const usedSec = (Date.now()-bhfSingle.curStart)/1000;
-    if(bhfCfg.limitPreset) adaptUpdate(bhfSingle.cur.percent, correct, usedSec);   // 仅图出题时更新频率
+    // 仅图出题时更新频率；重做不计；只有零误差（user===ans）才允许降频，判对但带误差权重不变
+    if(bhfCfg.limitPreset && !bhfSingle.isRepeat) adaptUpdate(bhfSingle.cur.percent, correct, usedSec, user === ans);
     if(correct){
       flashBHFHandFeedback('ok', `✓ 正确，分母约 ${ans}`);
     }else{
@@ -1720,7 +1755,7 @@
   function revealBHFHandSingle(){
     if(!bhfSingle.cur || bhfSingle.paused) return;
     bhfSingle.revealing = true;
-    if(bhfCfg.limitPreset) adaptUpdate(bhfSingle.cur.percent, false, (Date.now()-bhfSingle.curStart)/1000);   // 查看答案视同答错，提高频率
+    if(bhfCfg.limitPreset && !bhfSingle.isRepeat) adaptUpdate(bhfSingle.cur.percent, false, (Date.now()-bhfSingle.curStart)/1000, false);   // 查看答案视同答错，提高频率；重做不计
     flashBHFHandFeedback('info', `答案：${bhfSingle.cur.answer}（点击"跳过"继续）`);
     $('#bhfsFracInput').disabled = true;
     $$('.numpad-key', $('#bhfsNumpad')).forEach(k=>k.disabled = true);
@@ -1744,7 +1779,7 @@
         displayAnswer: String(q.answer), errorPct: bhfErrPct(q.user, q.answer),
         userText: q.user===null ? '' : String(q.user), correct: q.correct, usedSec: q.usedSec
       })),
-      totalSec: (Date.now()-bhfSingle.start)/1000,
+      totalSec: (Date.now()-bhfSingle.start - bhfSingle.pausedTotal)/1000,   // 扣除暂停时长，统计纯练习用时
       allowedErr: bhfAllowedErr()
     });
   }
