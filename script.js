@@ -2214,9 +2214,33 @@
     $('#bhfEnd').addEventListener('click', submitBHFHandFixed);
   }
 
+  /* ---------- 暗色主题 ---------- */
+  function initTheme(){
+    const saved = localStorage.getItem('theme');
+    const theme = saved || (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    document.documentElement.setAttribute('data-theme', theme);
+
+    const ICON_SUN = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>';
+    const ICON_MOON = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>';
+
+    const btn = document.createElement('button');
+    btn.className = 'theme-toggle';
+    btn.title = '切换明暗主题';
+    btn.innerHTML = theme === 'dark' ? ICON_SUN : ICON_MOON;
+    btn.addEventListener('click', ()=>{
+      const next = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+      document.documentElement.setAttribute('data-theme', next);
+      btn.innerHTML = next === 'dark' ? ICON_SUN : ICON_MOON;
+      localStorage.setItem('theme', next);
+    });
+    const app = document.getElementById('app') || document.querySelector('.app');
+    if(app) app.appendChild(btn);
+  }
+
   /* ---------- 启动 ---------- */
   function bootstrap(){
     try{
+      initTheme();
       bind();
       updateCfgTip();
       updateSquareTip();
