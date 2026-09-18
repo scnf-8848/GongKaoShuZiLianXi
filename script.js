@@ -1252,7 +1252,7 @@
 
   /* ---------- 平方数单题练习 ---------- */
   const sqSingle = {
-    questions:[], cur:null, curStart:0, start:0,
+    questions:[], cur:null, last:null, curStart:0, start:0,
     timer:null, autoNextTimer:null,
     // 错题重复：记下待重做的错题数，达到“答错→重复，答对→换新题”
     pending:null,
@@ -1339,13 +1339,14 @@
       sqSingle.isRepeat = true;  // 错题重做不计入频率调整
     }else{
       sqSingle.isRepeat = false;
-      if(pool.length>1 && sqSingle.cur !== null){
-        const filtered = pool.filter(n=>n!==sqSingle.cur);
-        next = adaptPick(filtered);   // 加权随机：熟题出现频率低，错题出现频率高
+      if(pool.length>1 && sqSingle.last !== null){
+        const filtered = pool.filter(n=>n!==sqSingle.last);
+        next = adaptPick(filtered);   // 加权随机：熟题出现频率低，错题出现频率高；同时剔除上一题避免连续重复
       }else{
         next = adaptPick(pool);
       }
     }
+    sqSingle.last = next;   // 记录本题目（含错题重做），供下一题避免连续重复
     sqSingle.cur = next;
     sqSingle.curStart = Date.now();
     $('#sqsIndex').textContent = `第 ${sqSingle.questions.length+1} 题`;
@@ -1580,20 +1581,33 @@
     });
     return cands.length ? cands : null;
   }
-  // 生成一个百分数（最多 1 位小数）
-  function bhfGenPercent(){
+  // 生成一个百分数（最多 1 位小数）；last 为上一题百分数时尽量避免与其相同（预设池直接剔除，连续池重试）
+  function bhfGenPercent(last){
     const cands = bhfCandidates();
-    if(cands) return cands[rand(0, cands.length-1)];
+    if(cands){
+      if(cands.length>1 && last !== null){
+        const filtered = cands.filter(p=>p!==last);
+        return filtered[rand(0, filtered.length-1)];
+      }
+      return cands[rand(0, cands.length-1)];
+    }
     const keys = Array.from(bhfCfg.ranges);
     const key = keys[rand(0, keys.length-1)];
     const [min, max] = BHF_RANGES[key];
-    const tenth = rand(min*10, max*10);
-    return tenth/10;
+    let p = rand(min*10, max*10)/10;
+    if(last !== null && Math.abs(p-last)<0.05){
+      for(let k=0;k<3 && Math.abs(p-last)<0.05;k++) p = rand(min*10, max*10)/10;
+    }
+    return p;
   }
-  // 单题模式的百分数生成：仅图出题时按记忆频率加权选预设值，否则走均匀随机
-  function bhfGenPercentAdapt(){
+  // 单题模式的百分数生成：仅图出题时按记忆频率加权选预设值（剔除上一题），否则走均匀随机（同样避免与上一题相同）
+  function bhfGenPercentAdapt(last){
     const cands = bhfCandidates();
-    if(!cands) return bhfGenPercent();
+    if(!cands) return bhfGenPercent(last);
+    if(cands.length>1 && last !== null){
+      const filtered = cands.filter(p=>p!==last);
+      return adaptPick(filtered);
+    }
     return adaptPick(cands);
   }
   // 精确答案 = 1/(p/100) = 100/p，保留 1 位小数
@@ -1631,7 +1645,7 @@
 
   /* ---------- 百化分单题练习 ---------- */
   const bhfSingle = {
-    questions:[], cur:null, curStart:0, start:0,
+    questions:[], cur:null, last:null, curStart:0, start:0,
     timer:null, autoNextTimer:null,
     // 错题重复：记下待重做的错题百分数
     pending:null,
@@ -1708,9 +1722,10 @@
     clearTimeout(bhfSingle.autoNextTimer);
     bhfSingle.revealing = false;
     if(bhfCfg.ranges.size===0) return;
-    // 若非空待重做错题，则用该百分数重做（不计频率调整）；否则重新随机生成
+    // 若非空待重做错题，则用该百分数重做（不计频率调整）；否则重新随机生成（避免与上一题相同）
     const isRepeat = bhfSingle.pending !== null;
-    const p = isRepeat ? (()=>{ const v=bhfSingle.pending; bhfSingle.pending=null; return v; })() : bhfGenPercentAdapt();
+    const p = isRepeat ? (()=>{ const v=bhfSingle.pending; bhfSingle.pending=null; return v; })() : bhfGenPercentAdapt(bhfSingle.last);
+    bhfSingle.last = p;   // 记录本题目（含错题重做），供下一题避免连续重复
     bhfSingle.isRepeat = isRepeat;
     const ans = bhfAnswer(p);
     bhfSingle.cur = { percent:p, answer:ans };
@@ -1805,13 +1820,7 @@
     bhfFixed.questions = [];
     let lastP = null;
     for(let i=0;i<n;i++){
-      let p = bhfGenPercent();
-      // 避免与上一题相同
-      if(bhfCfg.ranges.size>1){
-        for(let k=0;k<3 && lastP!==null && Math.abs(p-lastP)<0.05;k++){
-          p = bhfGenPercent();
-        }
-      }
+      const p = bhfGenPercent(lastP);   // 内部已避免与上一题相同
       bhfFixed.questions.push({ percent:p, answer:bhfAnswer(p), userText:'', correct:false, usedSec:0 });
       lastP = p;
     }
