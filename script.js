@@ -1543,6 +1543,7 @@
      在选中范围内随机生成最多 1 位小数的百分数 p，
      用户回答对应分数 1/(100/p) 的分母，精确答案保留 1 位小数。
      允许误差：默认 2%；勾选“仅从上图百分数中出题”（limitPreset）时收紧到 1%。 */
+  // 范围按全开区间处理（(1,10)、(10,20)、(20,50)）：端点值 1%、10%、20%、50% 为纯定义/常识，不纳入出题
   const BHF_RANGES = { '1-10':[1,10], '10-20':[10,20], '20-50':[20,50] };
   const bhfCfg = { ranges:new Set(), mode:'single', count:5, limitPreset:false, repeatWrong:false };
 
@@ -1577,7 +1578,7 @@
     const cands = [];
     keys.forEach(key=>{
       const [min, max] = BHF_RANGES[key];
-      BHF_PRESET_ALL.forEach(p=>{ if(p>=min && p<=max) cands.push(p); });
+      BHF_PRESET_ALL.forEach(p=>{ if(p>min && p<max) cands.push(p); });   // 开区间：剔除端点值
     });
     return cands.length ? cands : null;
   }
@@ -1594,9 +1595,9 @@
     const keys = Array.from(bhfCfg.ranges);
     const key = keys[rand(0, keys.length-1)];
     const [min, max] = BHF_RANGES[key];
-    let p = rand(min*10, max*10)/10;
+    let p = rand(min*10+1, max*10-1)/10;   // 开区间：剔除端点值（如 1.0、10.0、20.0、50.0）
     if(last !== null && Math.abs(p-last)<0.05){
-      for(let k=0;k<3 && Math.abs(p-last)<0.05;k++) p = rand(min*10, max*10)/10;
+      for(let k=0;k<3 && Math.abs(p-last)<0.05;k++) p = rand(min*10+1, max*10-1)/10;
     }
     return p;
   }
