@@ -55,6 +55,8 @@
 
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
 html,body{margin:0;padding:0;}
+/* 表单控件默认不继承字体，显式继承避免 Windows 下中文回退到其他字体 */
+button,input,select,textarea{font-family:inherit;}
 body{
   font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
   background:var(--bg);
@@ -266,7 +268,10 @@ body{
   background:var(--card);border-radius:var(--radius);padding:10px 8px;
   box-shadow:var(--shadow);
 }
-.view[data-view="fixed"] .stats-bar{grid-template-columns:repeat(3,1fr);}
+/* 固定题数类视图只有 3 个指标（含基本计算 / 平方数 / 百化分三种固定题数页） */
+.view[data-view="fixed"] .stats-bar,
+.view[data-view="square-fixed"] .stats-bar,
+.view[data-view="bhf-fixed"] .stats-bar{grid-template-columns:repeat(3,1fr);}
 .stat{display:flex;flex-direction:column;align-items:center;gap:2px;}
 .stat-k{font-size:11px;color:var(--muted);}
 .stat-v{font-size:15px;font-weight:600;color:var(--primary);}
@@ -396,6 +401,13 @@ body{
 .fixed-item .fi-input:focus{border-color:var(--primary);}
 .fixed-item.done{background:var(--ok-bg);}
 .fixed-item.done .fi-input{border-color:var(--ok);}
+/* 暂停中锁定的列表项（输入框 / 选项）要能看出来 */
+.fixed-item .fi-input:disabled,
+.fixed-item .fi-opt:disabled{opacity:.5;cursor:not-allowed;}
+/* 固定题数页头：结束 / 暂停（百化分还有图表按钮）并排时留出间距 */
+.view[data-view="fixed"] .q-header,
+.view[data-view="square-fixed"] .q-header,
+.view[data-view="bhf-fixed"] .q-header{gap:8px;}
 /* 固定题数 - 选择模式：选项单行排布 */
 .fixed-item .fi-options{display:flex;gap:8px;flex:1;min-width:0;overflow-x:auto;}
 .fixed-item .fi-opt{
@@ -438,6 +450,17 @@ body{
 
 /* ============ 历史记录 ============ */
 .history-list{display:flex;flex-direction:column;gap:10px;margin-bottom:14px;}
+/* 历史页顶部：累计统计 + 正确率趋势 */
+.history-summary:empty{display:none;}
+.history-summary{margin-bottom:14px;}
+.hs-stats{display:flex;flex-wrap:wrap;gap:4px 16px;font-size:13px;color:var(--muted);}
+.hs-stats b{color:var(--primary);font-weight:600;}
+.hs-chart{display:flex;align-items:flex-end;gap:4px;height:56px;margin:10px 0 6px;}
+.hs-bar{flex:1;min-width:6px;max-width:28px;display:block;border-radius:3px 3px 0 0;opacity:.85;}
+.hs-bar.ok{background:var(--ok);}
+.hs-bar.warn{background:var(--warn);}
+.hs-bar.err{background:var(--err);}
+.hs-note{font-size:11px;color:var(--muted);}
 .history-item{
   border:1px solid var(--line);border-radius:10px;padding:12px;cursor:pointer;
   background:var(--surface);
@@ -459,9 +482,15 @@ body{
   overflow-x:auto;
 }
 .formula-box .katex{font-size:1.25em;}
+/* 公式内容的独立容器：U 型图会往自己身上写内联样式，隔离在子容器里就不影响公式框 */
+.fd-body{width:100%;}
 
 /* 百化分 U 型交互区 */
 .bhf-svg{display:block;width:100%;max-width:540px;margin:0 auto;cursor:crosshair;}
+/* 颜色统一走 CSS 变量，跟随明暗主题 */
+.bhf-path{stroke:var(--bhf-track);}
+.bhf-bar,.bhf-dash{stroke:var(--bhf-line);}
+.bhf-ancg circle{fill:var(--bhf-line);}
 .bhf-anchor{font-size:8px;fill:var(--bhf-anchor);font-weight:600;pointer-events:none;user-select:none;}
 .bhf-p{font-size:8.5px;fill:var(--bhf-p);}
 .bhf-f{font-size:8px;font-weight:700;fill:var(--bhf-f);}

@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>公考资料分析计算练习工具</title>
   <script>try{if(localStorage.getItem('theme')==='dark'||(!localStorage.getItem('theme')&&matchMedia('(prefers-color-scheme: dark)').matches))document.documentElement.setAttribute('data-theme','dark')}catch(e){}</script>
   <link rel="stylesheet" href="styles.css" />
@@ -190,6 +190,7 @@
         <div class="q-header" style="margin-bottom:10px;">
           <button class="btn btn-danger-ghost btn-end" id="fixedEnd">结束练习</button>
           <div style="flex:1;"></div>
+          <button class="btn btn-pause" id="fixedPause">暂停</button>
         </div>
         <div class="choice-hint" id="fixedChoiceHint" style="display:none;">
           <div class="choice-hint-main">选择最接近精确答案的选项</div>
@@ -234,8 +235,9 @@
       <div class="card">
         <div class="cfg-header">
           <button class="btn btn-line back-btn-sm" data-go="home">← 返回首页</button>
-          <h2>历史记录（最新 10 次）</h2>
+          <h2>历史记录</h2>
         </div>
+        <div class="history-summary" id="historySummary"></div>
         <div class="history-list" id="historyList"></div>
         <button class="btn btn-danger-ghost full" id="clearHistory">清空记录</button>
       </div>
@@ -440,6 +442,7 @@
         <div class="q-header" style="margin-bottom:10px;">
           <button class="btn btn-danger-ghost btn-end" id="sqfEnd">结束练习</button>
           <div style="flex:1;"></div>
+          <button class="btn btn-pause" id="sqfPause">暂停</button>
         </div>
         <div class="fixed-list" id="sqfList"></div>
         <div class="btn-row">
@@ -517,6 +520,7 @@
         <div class="q-header" style="margin-bottom:10px;">
           <button class="btn btn-danger-ghost btn-end" id="bhfEnd">结束练习</button>
           <div style="flex:1;"></div>
+          <button class="btn btn-pause" id="bhfPause">暂停</button>
           <button class="btn btn-line bhf-chart-btn" id="bhfChartToggle">显示图表</button>
         </div>
         <div class="fixed-list" id="bhfList"></div>
@@ -532,6 +536,15 @@
 
   </main>
 
-  <script src="script.js"></script>
+  <!-- 模块按依赖顺序加载，共享 window.GK（经典 script，保证 file:// 双击可用） -->
+  <script src="js/core.js"></script>
+  <script src="js/store.js"></script>
+  <script src="js/summary.js"></script>
+  <script src="js/formula.js"></script>
+  <script src="js/drill-engine.js"></script>
+  <script src="js/drills/basic.js"></script>
+  <script src="js/drills/square.js"></script>
+  <script src="js/drills/bhf.js"></script>
+  <script src="js/app.js"></script>
 </body>
 </html>
