@@ -10,6 +10,7 @@
   const $$ = (s,r=document)=>Array.from(r.querySelectorAll(s));
   const rand = (min,max)=>Math.floor(Math.random()*(max-min+1))+min;
   const LS_KEY = 'gk_calc_records_v1';
+  const LS_DRAFT = 'gk_calc_draft_v1';   // 进行中练习的草稿（意外退出后恢复用）
   const isTouchDevice = ()=>'ontouchstart' in window || navigator.maxTouchPoints > 0;
 
   function fmtTime(sec){
@@ -47,7 +48,7 @@
     window.scrollTo({top:0,behavior:'instant'});
     // 视图进入钩子
     if(view==='history') renderHistory();
-    if(view==='home') stopAllTimers();
+    if(view==='home'){ stopAllTimers(); saveDraftAsRecord(); }
   }
 
   /* ---------- 配置状态 ---------- */
@@ -240,6 +241,20 @@
   function startSingle(){
     lastPracticeSource = 'basic';
     recordLaunch('basic', cfg);
+    // 意外退出保护：每答一题把已完成题目写入草稿
+    activePractice = ()=>({
+      type:'单题练习',
+      time: nowStr(),
+      launch: lastLaunch ? JSON.parse(JSON.stringify(lastLaunch)) : null,
+      totalSec: ((single.paused ? single.pauseStart : Date.now()) - single.start - single.pausedTotal)/1000,
+      questions: single.questions.map(q=>({
+        expr:q.expr, answer:q.answer,
+        displayAnswer: q.displayAnswer || String(q.answer),
+        errorPct: q.errorPct || '-',
+        user: q.userText!==undefined ? q.userText : (q.user||''),
+        correct:q.correct, usedSec:q.usedSec
+      }))
+    });
     single.questions = [];
     single.paused = false;   // 重置暂停状态，避免沿用上次练习的累计暂停时长导致计时为负
     single.pausedTotal = 0;
@@ -308,6 +323,7 @@
         usedSec: (Date.now()-single.curStart)/1000
       });
     }
+    checkpointDraft();   // 未提交的当前题已记为错误，落盘
     clearTimeout(single.autoNextTimer);
     single.revealing = false;
     single.cur = genQuestion();
@@ -375,6 +391,7 @@
       userText: q.options[i].text, user: q.options[i].text, correct,
       usedSec
     });
+    checkpointDraft();
     single.cur = null;
     single.autoNextTimer = setTimeout(()=>nextSingle(), correct?700:1200);
   }
@@ -405,6 +422,7 @@
         user, correct: true,
         usedSec: (Date.now()-single.curStart)/1000
       });
+      checkpointDraft();
       single.cur = null;
       single.autoNextTimer = setTimeout(()=>nextSingle(), 700);
     } else {
@@ -419,6 +437,7 @@
         user, correct: false,
         usedSec: (Date.now()-single.curStart)/1000
       });
+      checkpointDraft();
       single.cur = null;
       $('#singleInput').disabled = true;
       disableNumpad();
@@ -445,6 +464,7 @@
       userText: '(查看答案)', user: '', correct: false,
       usedSec: (Date.now()-single.curStart)/1000
     });
+    checkpointDraft();
     single.cur = null;
   }
 
@@ -541,6 +561,29 @@
   function startFixed(){
     lastPracticeSource = 'basic';
     recordLaunch('basic', cfg);
+    // 意外退出保护：已填写的题按当前作答批改后写入草稿
+    const isChoiceCfg = cfg.answer === 'choice';
+    activePractice = ()=>{
+      const totalSec = (Date.now()-fixed.start)/1000;
+      const per = fixed.questions.length ? totalSec/fixed.questions.length : 0;
+      const answered = fixed.questions.filter(q=>q.user!=='' && q.user!==undefined);
+      return {
+        type:`固定题数（${fixed.questions.length}题）`,
+        time: nowStr(),
+        launch: lastLaunch ? JSON.parse(JSON.stringify(lastLaunch)) : null,
+        totalSec,
+        questions: answered.map(q=>{
+          const c = Object.assign({}, q);
+          gradeBasicFixedQuestion(c, isChoiceCfg);
+          return {
+            expr:c.expr, answer:c.answer,
+            displayAnswer:c.displayAnswer || String(c.answer),
+            errorPct:c.errorPct || '-',
+            user:c.userText, correct:c.correct, usedSec:per
+          };
+        })
+      };
+    };
     const n = cfg.count;
     const isChoice = cfg.answer === 'choice';
     fixed.questions = [];
@@ -595,6 +638,7 @@
     b.classList.add('selected');
     item.classList.add('done');
     $('#fDone').textContent = fixedDoneCount();
+    checkpointDraft();
   }
 
   function onFixedInput(e){
@@ -604,6 +648,7 @@
     const item = inp.closest('.fixed-item');
     const val = inp.value.trim();
     fixed.questions[i].user = val;
+    checkpointDraft();
     if(val===''){ item.classList.remove('done'); return; }
     item.classList.add('done');
     $('#fDone').textContent = fixedDoneCount();
@@ -615,38 +660,43 @@
     $('#fDone').textContent = fixedDoneCount();
   }
 
+  // 批改固定题数中的单题（填空 / 选择）；正常提交与未完成草稿共用
+  function gradeBasicFixedQuestion(q, isChoice){
+    if(isChoice){
+      if(q.user === undefined || q.user === ''){
+        q.correct = false;
+        q.displayAnswer = q.options[q.correctIndex].text;
+        q.errorPct = '-';
+        q.userText = '未选';
+      }else{
+        const oi = q.user;
+        q.correct = oi === q.correctIndex;
+        q.displayAnswer = q.options[q.correctIndex].text;
+        q.errorPct = '-';
+        q.userText = q.options[oi].text;
+      }
+    }else{
+      const u = q.user==='' ? null : parseNum(q.user);
+      if(u !== null && !isNaN(u)){
+        const result = checkAnswer(u, q);
+        q.correct = result.correct;
+        q.displayAnswer = result.displayAnswer;
+        q.errorPct = result.errorPct;
+      } else {
+        q.correct = false;
+        q.displayAnswer = formatAnswer(q.answer);
+        q.errorPct = '-';
+      }
+      q.userText = q.user==='' ? '未填' : q.user;
+    }
+  }
+
   function submitFixed(){
     const totalSec = (Date.now()-fixed.start)/1000;
     const per = fixed.questions.length ? totalSec/fixed.questions.length : 0;
     const isChoice = cfg.answer === 'choice';
     fixed.questions.forEach(q=>{
-      if(isChoice){
-        if(q.user === undefined || q.user === ''){
-          q.correct = false;
-          q.displayAnswer = q.options[q.correctIndex].text;
-          q.errorPct = '-';
-          q.userText = '未选';
-        }else{
-          const oi = q.user;
-          q.correct = oi === q.correctIndex;
-          q.displayAnswer = q.options[q.correctIndex].text;
-          q.errorPct = '-';
-          q.userText = q.options[oi].text;
-        }
-      }else{
-        const u = q.user==='' ? null : parseNum(q.user);
-        if(u !== null){
-          const result = checkAnswer(u, q);
-          q.correct = result.correct;
-          q.displayAnswer = result.displayAnswer;
-          q.errorPct = result.errorPct;
-        } else {
-          q.correct = false;
-          q.displayAnswer = formatAnswer(q.answer);
-          q.errorPct = '-';
-        }
-        q.userText = q.user==='' ? '未填' : q.user;
-      }
+      gradeBasicFixedQuestion(q, isChoice);
       q.usedSec = per;
     });
     stopFixedTimers();
@@ -709,6 +759,8 @@
 
     // 保存记录（历史回看不重复保存）；同时存入启动描述供历史“再来一次”重跑
     if(persist){
+      clearDraft();
+      activePractice = null;
       saveRecord({
         type: data.type,
         time: nowStr(),
@@ -892,8 +944,51 @@
   function saveRecord(r){
     const list = loadRecords();
     list.unshift(r);
-    while(list.length>3) list.pop();
+    while(list.length>10) list.pop();
     localStorage.setItem(LS_KEY, JSON.stringify(list));
+  }
+
+  /* ---------- 未完成练习草稿（意外退出保护） ---------- */
+  // 当前进行中的练习快照器：返回 null 表示尚未完成任何题；不在练习中时为 null
+  let activePractice = null;
+
+  function loadDraft(){
+    try{
+      const d = JSON.parse(localStorage.getItem(LS_DRAFT) || 'null');
+      return d && Array.isArray(d.questions) && d.questions.length ? d : null;
+    }catch(e){ return null; }
+  }
+  function clearDraft(){
+    try{ localStorage.removeItem(LS_DRAFT); }catch(e){}
+  }
+  // 把当前练习的已完成题目写入草稿；每答一题及页面隐藏/关闭时调用
+  function checkpointDraft(){
+    if(!activePractice) return;
+    let data;
+    try{ data = activePractice(); }catch(e){ return; }
+    if(!data || !data.questions || !data.questions.length) return;
+    data.savedAt = Date.now();
+    try{ localStorage.setItem(LS_DRAFT, JSON.stringify(data)); }catch(e){}
+  }
+  // 进入首页时，把上次意外中断留下的草稿直接保存为一条记录
+  function saveDraftAsRecord(){
+    const d = loadDraft();
+    if(!d) return;
+    const qs = d.questions;
+    const correct = qs.filter(q=>q.correct).length;
+    saveRecord({
+      type: d.type,
+      time: d.time || nowStr(),
+      count: qs.length,
+      correct,
+      acc: qs.length ? Math.round(correct/qs.length*100) : 0,
+      totalSec: d.totalSec || 0,
+      avgSec: qs.length ? (d.totalSec||0)/qs.length : 0,
+      allowedErr: d.allowedErr,
+      launch: d.launch || null,
+      questions: qs
+    });
+    clearDraft();
   }
   function renderHistory(){
     const list = loadRecords();
@@ -1267,6 +1362,18 @@
     lastPracticeSource = 'square';
     recordLaunch('square', { ranges: squareCfg.ranges.slice(), mode: squareCfg.mode, count: squareCfg.count, repeatWrong: squareCfg.repeatWrong });
     adaptReset();   // 本次练习的记忆频率从零开始
+    // 意外退出保护：每答一题把已完成题目写入草稿
+    activePractice = ()=>({
+      type:'平方数练习（单题）',
+      time: nowStr(),
+      launch: lastLaunch ? JSON.parse(JSON.stringify(lastLaunch)) : null,
+      totalSec: ((sqSingle.paused ? sqSingle.pauseStart : Date.now()) - sqSingle.start - sqSingle.pausedTotal)/1000,
+      questions: sqSingle.questions.map(q=>({
+        expr: q.number+'²', answer:q.answer,
+        displayAnswer:String(q.answer), errorPct:'-',
+        user:String(q.user), correct:q.correct, usedSec:q.usedSec
+      }))
+    });
     sqSingle.questions = [];
     sqSingle.pending = null;
     sqSingle.paused = false;   // 重置暂停状态，避免沿用上次练习的累计暂停时长导致计时为负
@@ -1329,6 +1436,7 @@
         usedSec: (Date.now()-sqSingle.curStart)/1000
       });
     }
+    checkpointDraft();
     clearTimeout(sqSingle.autoNextTimer);
     sqSingle.revealing = false;
     // 从选中范围中随机选数，避免连续重复；若非空待重做错题，则优先重做该题
@@ -1378,6 +1486,7 @@
         number: sqSingle.cur, answer: sqSingle.cur*sqSingle.cur,
         user, correct: true, usedSec
       });
+      checkpointDraft();
       sqSingle.cur = null;
       $('#sqsInput').disabled = true;
       $$('.numpad-key', $('#sqsNumpad')).forEach(k=>k.disabled = true);
@@ -1390,6 +1499,7 @@
         number: sqSingle.cur, answer: sqSingle.cur*sqSingle.cur,
         user, correct: false, usedSec
       });
+      checkpointDraft();
       sqSingle.cur = null;
       $('#sqsInput').disabled = true;
       $$('.numpad-key', $('#sqsNumpad')).forEach(k=>k.disabled = true);
@@ -1412,6 +1522,7 @@
       user: '(查看答案)', correct: false,
       usedSec: (Date.now()-sqSingle.curStart)/1000
     });
+    checkpointDraft();
     sqSingle.cur = null;
   }
 
@@ -1446,6 +1557,26 @@
   function startSquareFixed(){
     lastPracticeSource = 'square';
     recordLaunch('square', { ranges: squareCfg.ranges.slice(), mode: squareCfg.mode, count: squareCfg.count, repeatWrong: squareCfg.repeatWrong });
+    // 意外退出保护：已填写的题按当前作答批改后写入草稿
+    activePractice = ()=>{
+      const totalSec = (Date.now()-sqFixed.start)/1000;
+      const per = sqFixed.questions.length ? totalSec/sqFixed.questions.length : 0;
+      const answered = sqFixed.questions.filter(q=>q.user!=='' && !isNaN(parseInt(q.user,10)));
+      return {
+        type:'平方数练习（固定题数）',
+        time: nowStr(),
+        launch: lastLaunch ? JSON.parse(JSON.stringify(lastLaunch)) : null,
+        totalSec,
+        questions: answered.map(q=>{
+          const u = parseInt(q.user, 10);
+          return {
+            expr:q.number+'²', answer:q.answer,
+            displayAnswer:String(q.answer), errorPct:'-',
+            user:q.user, correct:u===q.answer, usedSec:per
+          };
+        })
+      };
+    };
     const n = squareCfg.count;
     const pool = squareCfg.ranges;
     if(pool.length===0) return;
@@ -1490,6 +1621,7 @@
     const item = inp.closest('.fixed-item');
     const val = inp.value.trim();
     sqFixed.questions[i].user = val;
+    checkpointDraft();
     if(val===''){ item.classList.remove('done'); return; }
     item.classList.add('done');
     $('#sqfDone').textContent = sqFixed.questions.filter(q=>q.user!=='').length;
@@ -1675,6 +1807,20 @@
     recordLaunch('bhf', { ranges: [...bhfCfg.ranges], mode: bhfCfg.mode, count: bhfCfg.count, limitPreset: bhfCfg.limitPreset, swap: bhfCfg.swap, repeatWrong: bhfCfg.repeatWrong });
     adaptReset();   // 本次练习的记忆频率从零开始
     const note = $('#bhfPadNote'); if(note) note.textContent = '误差≤' + bhfAllowedErr() + '%';
+    // 意外退出保护：每答一题把已完成题目写入草稿
+    activePractice = ()=>({
+      type:'百化分练习（单题）',
+      time: nowStr(),
+      launch: lastLaunch ? JSON.parse(JSON.stringify(lastLaunch)) : null,
+      totalSec: ((bhfSingle.paused ? bhfSingle.pauseStart : Date.now()) - bhfSingle.start - bhfSingle.pausedTotal)/1000,
+      allowedErr: bhfAllowedErr(),
+      questions: bhfSingle.questions.map(q=>({
+        expr: bhfStrip(q.q)+'% = 1/？', answer:q.answer,
+        displayAnswer:String(q.answer), errorPct: bhfErrPct(q.user, q.answer),
+        user: (q.user===null || q.user===undefined) ? '' : String(q.user),
+        correct:q.correct, usedSec:q.usedSec
+      }))
+    });
     bhfSingle.questions = [];
     bhfSingle.pending = null;
     bhfSingle.lastQ = null;
@@ -1735,6 +1881,7 @@
         usedSec: (Date.now()-bhfSingle.curStart)/1000
       });
     }
+    checkpointDraft();
     clearTimeout(bhfSingle.autoNextTimer);
     bhfSingle.revealing = false;
     if(bhfCfg.ranges.size===0) return;
@@ -1776,6 +1923,7 @@
       if(bhfCfg.repeatWrong) bhfSingle.pending = Object.assign({}, bhfSingle.cur);   // 错题重做（保留原出题方向）
     }
     bhfSingle.questions.push({ q:bhfSingle.cur.q, answer:ans, user, correct, usedSec });
+    checkpointDraft();
     bhfSingle.cur = null;
     const inp = $('#bhfsFracInput');
     inp.disabled = true;
@@ -1796,6 +1944,7 @@
       user: '(查看答案)', correct: false,
       usedSec: (Date.now()-bhfSingle.curStart)/1000
     });
+    checkpointDraft();
     bhfSingle.cur = null;
   }
 
@@ -1831,6 +1980,27 @@
   function startBHFHandFixed(){
     lastPracticeSource = 'bhf';
     recordLaunch('bhf', { ranges: [...bhfCfg.ranges], mode: bhfCfg.mode, count: bhfCfg.count, limitPreset: bhfCfg.limitPreset, swap: bhfCfg.swap, repeatWrong: bhfCfg.repeatWrong });
+    // 意外退出保护：已填写的题按当前作答批改后写入草稿
+    activePractice = ()=>{
+      const totalSec = (Date.now()-bhfFixed.start)/1000;
+      const per = bhfFixed.questions.length ? totalSec/bhfFixed.questions.length : 0;
+      const answered = bhfFixed.questions.filter(q=>q.userText!=='' && !isNaN(parseFloat(q.userText)));
+      return {
+        type:'百化分练习（固定题数）',
+        time: nowStr(),
+        launch: lastLaunch ? JSON.parse(JSON.stringify(lastLaunch)) : null,
+        totalSec,
+        allowedErr: bhfAllowedErr(),
+        questions: answered.map(q=>{
+          const u = parseFloat(q.userText);
+          return {
+            expr: bhfStrip(q.q)+'% = 1/？', answer:q.answer,
+            displayAnswer:String(q.answer), errorPct: bhfErrPct(u, q.answer),
+            user:String(u), correct:bhfCheck(u, q.answer), usedSec:per
+          };
+        })
+      };
+    };
     const n = bhfCfg.count;
     if(bhfCfg.ranges.size===0) return;
     bhfFixed.questions = [];
@@ -1868,6 +2038,7 @@
     if(clean !== inp.value) inp.value = clean;
     const val = inp.value.trim();
     bhfFixed.questions[i].userText = val;
+    checkpointDraft();
     if(val===''){ item.classList.remove('done'); return; }
     item.classList.add('done');
     $('#bhfDone').textContent = bhfFixed.questions.filter(q=>q.userText!=='').length;
@@ -2267,6 +2438,11 @@
     try{
       initTheme();
       bind();
+      // 意外退出保护：页面隐藏或卸载时落盘当前练习草稿
+      window.addEventListener('pagehide', checkpointDraft);
+      document.addEventListener('visibilitychange', ()=>{
+        if(document.visibilityState === 'hidden') checkpointDraft();
+      });
       updateCfgTip();
       updateSquareTip();
       go('home');
