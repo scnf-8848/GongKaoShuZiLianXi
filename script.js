@@ -49,6 +49,7 @@
     // 视图进入钩子
     if(view==='history') renderHistory();
     if(view==='home'){ stopAllTimers(); saveDraftAsRecord(); }
+    if(view!=='bhf-single' && view!=='bhf-fixed') closeBHFChart();
   }
 
   /* ---------- 配置状态 ---------- */
@@ -1085,9 +1086,9 @@
     const NS='http://www.w3.org/2000/svg';
 
     el.innerHTML = `
-      <svg class="bhf-svg" id="bhfSvg" viewBox="0 0 ${VB} ${VBH}" preserveAspectRatio="xMidYMid meet">
-        <path id="bhfPath" d="${D}" fill="none" stroke="#c9d8f7" stroke-width="10" stroke-linecap="round"/>
-        <path id="bhfBar" d="${D}" fill="none" stroke="#5b7bd9" stroke-width="2" stroke-linecap="round"/>
+      <svg class="bhf-svg" viewBox="0 0 ${VB} ${VBH}" preserveAspectRatio="xMidYMid meet">
+        <path class="bhf-path" d="${D}" fill="none" stroke="#c9d8f7" stroke-width="10" stroke-linecap="round"/>
+        <path class="bhf-bar" d="${D}" fill="none" stroke="#5b7bd9" stroke-width="2" stroke-linecap="round"/>
         <path d="${D}" fill="none" stroke="#5b7bd9" stroke-width="1" stroke-dasharray="2 4" opacity=".5"/>
       </svg>
     `;
@@ -1097,8 +1098,8 @@
     el.style.overflow='visible';
     el.style.position='relative';
 
-    const svg = $('#bhfSvg');
-    const path = $('#bhfPath');
+    const svg = el.querySelector('.bhf-svg');
+    const path = el.querySelector('.bhf-path');
     const total = path.getTotalLength();
     const arcLen = total - LEN*2;
 
@@ -1211,6 +1212,32 @@
     }
     svg.addEventListener('mousemove', handle);
     svg.addEventListener('mouseleave', ()=>{ tip.style.display='none'; });
+  }
+
+  /* 百化分做题页：右侧图表的显示 / 隐藏（单题、固定题数各一套） */
+  const BHF_CHART_IDS = [
+    ['#bhfsChartPanel','#bhfsChartBody','#bhfsChartToggle'],
+    ['#bhfChartPanel','#bhfChartBody','#bhfChartToggle']
+  ];
+  function closeBHFChart(){
+    BHF_CHART_IDS.forEach(([p, , t])=>{
+      const panel = $(p); if(panel) panel.classList.remove('show');
+      const btn = $(t); if(btn) btn.textContent = '显示图表';
+    });
+  }
+  function toggleBHFChart(panelSel, bodySel, btnSel){
+    const panel = $(panelSel);
+    const body = $(bodySel);
+    const btn = $(btnSel);
+    if(!panel || !body) return;
+    const show = !panel.classList.contains('show');
+    if(show){
+      panel.classList.add('show');   // 先可见再渲染，保证 SVG 能取到路径长度
+      renderBHF(body);
+    }else{
+      panel.classList.remove('show');
+    }
+    if(btn) btn.textContent = show ? '隐藏图表' : '显示图表';
   }
 
   function openFormula(key){
@@ -1828,6 +1855,7 @@
     bhfSingle.pausedTotal = 0;
     bhfSingle.start = Date.now();
     bhfSingle.timer = setInterval(tickBHFHandSingle, 200);
+    closeBHFChart();
     go('bhf-single');
     nextBHFHandSingle(true);
   }
@@ -2026,6 +2054,7 @@
     list.addEventListener('input', onBHFHandFixedInput);
     $('#bhfCount2').textContent = n;
     bhfFixed.timer = setInterval(tickBHFHandFixed, 200);
+    closeBHFChart();
     go('bhf-fixed');
   }
 
@@ -2377,6 +2406,8 @@
 
     // 百化分单题
     $('#bhfsPause').addEventListener('click', toggleBHFHandPause);
+    $('#bhfsChartToggle').addEventListener('click', ()=>toggleBHFChart('#bhfsChartPanel','#bhfsChartBody','#bhfsChartToggle'));
+    $('#bhfChartToggle').addEventListener('click', ()=>toggleBHFChart('#bhfChartPanel','#bhfChartBody','#bhfChartToggle'));
     $('#bhfsNext').addEventListener('click', ()=>nextBHFHandSingle());
     $('#bhfsReveal').addEventListener('click', revealBHFHandSingle);
     $('#bhfsEnd').addEventListener('click', endBHFHandSingle);

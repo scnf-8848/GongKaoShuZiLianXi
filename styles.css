@@ -472,6 +472,23 @@ body{
   padding:4px 9px;border-radius:6px;white-space:nowrap;
   box-shadow:0 2px 8px rgba(0,0,0,.2);
 }
+/* 百化分做题页：图表开关与侧栏 */
+.bhf-chart-actions{display:flex;justify-content:flex-end;margin-top:10px;}
+.bhf-chart-btn{min-height:32px;padding:0 14px;font-size:12px;}
+.bhf-chart-panel{
+  display:none;background:var(--card);border:1px solid var(--line);
+  border-radius:var(--radius);box-shadow:var(--shadow);padding:10px;
+}
+.bhf-chart-panel.show{display:block;}
+.bhf-chart-body{position:relative;}
+/* 宽屏时固定显示在内容右侧空白处，随可用宽度缩放 */
+@media (min-width:1200px){
+  .bhf-chart-panel.show{
+    position:fixed;top:96px;left:calc(50% + 384px);
+    width:min(340px, calc(50vw - 400px));
+    max-height:calc(100vh - 120px);overflow:auto;z-index:20;
+  }
+}
 .placeholder{text-align:center;padding:18px 10px;}
 .ph-icon{font-size:38px;display:block;margin-bottom:6px;}
 .back-btn{margin-bottom:8px;}

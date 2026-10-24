@@ -232,7 +232,10 @@
     <!-- ============ 历史记录 ============ -->
     <section class="view" data-view="history">
       <div class="card">
-        <h2>历史记录（最新 3 次）</h2>
+        <div class="cfg-header">
+          <button class="btn btn-line back-btn-sm" data-go="home">← 返回首页</button>
+          <h2>历史记录（最新 10 次）</h2>
+        </div>
         <div class="history-list" id="historyList"></div>
         <button class="btn btn-danger-ghost full" id="clearHistory">清空记录</button>
       </div>
@@ -493,6 +496,13 @@
             <button class="numpad-key numpad-key-confirm" data-key="confirm">确认</button>
           </div>
         </div>
+        <div class="bhf-chart-actions">
+          <button class="btn btn-line bhf-chart-btn" id="bhfsChartToggle">显示图表</button>
+        </div>
+      </div>
+      <!-- 百化分图表（点击“显示图表”后在右侧空白处展开） -->
+      <div class="bhf-chart-panel" id="bhfsChartPanel">
+        <div class="bhf-chart-body" id="bhfsChartBody"></div>
       </div>
     </section>
 
@@ -507,11 +517,16 @@
         <div class="q-header" style="margin-bottom:10px;">
           <button class="btn btn-danger-ghost btn-end" id="bhfEnd">结束练习</button>
           <div style="flex:1;"></div>
+          <button class="btn btn-line bhf-chart-btn" id="bhfChartToggle">显示图表</button>
         </div>
         <div class="fixed-list" id="bhfList"></div>
         <div class="btn-row">
           <button class="btn btn-primary" id="bhfConfirm">提交结算</button>
         </div>
+      </div>
+      <!-- 百化分图表（点击“显示图表”后在右侧空白处展开） -->
+      <div class="bhf-chart-panel" id="bhfChartPanel">
+        <div class="bhf-chart-body" id="bhfChartBody"></div>
       </div>
     </section>
 
