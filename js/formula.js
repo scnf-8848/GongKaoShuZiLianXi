@@ -237,10 +237,10 @@
     const body = document.createElement('div');
     body.className = 'fd-body';
     el.appendChild(body);
-    // 平方数显示 1~30 平方数表
+    // 平方数显示 11~30 平方数表（1~10 属常识，不再展示）
     if(key === 'square'){
       const cells = [];
-      for(let i=1;i<=30;i++){
+      for(let i=11;i<=30;i++){
         cells.push(`<span><b>${i}<sup>2</sup></b><i>=${i*i}</i></span>`);
       }
       body.innerHTML = '<div class="square-table">'+cells.join('')+'</div>';
