@@ -748,6 +748,7 @@
       bhfCfg.mode = config.mode || 'single';
       bhfCfg.count = config.count || 5;
       bhfCfg.limitPreset = !!config.limitPreset;
+      bhfCfg.swap = !!config.swap;
       bhfCfg.repeatWrong = !!config.repeatWrong;
       syncBHFCfgUI();
       if(bhfCfg.mode==='single') startBHFHandSingle();
@@ -795,6 +796,7 @@
     const rw = $('#bhfRepeatWrongWrap'); if(rw) rw.style.display = bhfCfg.mode==='single' ? '' : 'none';
     const fw = $('#bhfFixedCountWrap'); if(fw) fw.style.display = bhfCfg.mode==='fixed' ? '' : 'none';
     const lim = $('#bhfLimitPreset'); if(lim) lim.checked = bhfCfg.limitPreset;
+    const sw = $('#bhfSwap'); if(sw) sw.checked = bhfCfg.swap;
     const cb = $('#bhfRepeatWrong'); if(cb) cb.checked = bhfCfg.repeatWrong;
   }
   // 通用：将某个 seg 组的高亮设为指定值
@@ -1542,14 +1544,17 @@
   /* ---------- 百化分练习 ----------
      在选中范围内随机生成最多 1 位小数的百分数 p，
      用户回答对应分数 1/(100/p) 的分母，精确答案保留 1 位小数。
-     允许误差：默认 2%；勾选“仅从上图百分数中出题”（limitPreset）时收紧到 1%。 */
+     允许误差：默认 2%；勾选“仅从上图百分数中出题”（limitPreset）时收紧到 1%，
+     若同时开启“允许互换出题”（swap）则放宽到 1.5%（反向题存在分母保留 1 位小数的往返舍入）。 */
   // 范围按全开区间处理（(1,10)、(10,20)、(20,50)）：端点值 1%、10%、20%、50% 为纯定义/常识，不纳入出题
   const BHF_RANGES = { '1-10':[1,10], '10-20':[10,20], '20-50':[20,50] };
-  const bhfCfg = { ranges:new Set(), mode:'single', count:5, limitPreset:false, repeatWrong:false };
+  const bhfCfg = { ranges:new Set(), mode:'single', count:5, limitPreset:false, swap:false, repeatWrong:false };
 
-  // 百化分允许误差（%）：勾选“仅从上图百分数中出题”时收紧到 1%，否则 2%
+  // 百化分允许误差（%）：勾选“仅从上图百分数中出题”时收紧到 1%；
+  // 同时开启“允许互换出题”时放宽到 1.5%：正反向统一，覆盖反向题分母保留 1 位小数的往返舍入（最大约 1.45%）
   function bhfAllowedErr(){
-    return bhfCfg.limitPreset ? 1 : 2;
+    if(!bhfCfg.limitPreset) return 2;
+    return bhfCfg.swap ? 1.5 : 1;
   }
 
   function initBHFChips(){
@@ -1564,6 +1569,8 @@
     });
     const lim = $('#bhfLimitPreset');
     if(lim) lim.addEventListener('change', ()=> bhfCfg.limitPreset = lim.checked);
+    const sw = $('#bhfSwap');
+    if(sw) sw.addEventListener('change', ()=> bhfCfg.swap = sw.checked);
   }
   function updateBHFConfigTip(wrap){
     const tip = $('#bhfCfgTip');
@@ -1582,34 +1589,42 @@
     });
     return cands.length ? cands : null;
   }
-  // 生成一个百分数（最多 1 位小数）；last 为上一题百分数时尽量避免与其相同（预设池直接剔除，连续池重试）
-  function bhfGenPercent(last){
+  // 由源百分数生成一道题：开启“允许互换出题”时，每题随机选择正向或反向（反向把原分母作为题面，原百分数作为答案）
+  function bhfMakeQuestion(p){
+    const rev = bhfCfg.swap && Math.random() < 0.5;
+    const q = rev ? bhfAnswer(p) : p;
+    return { p, rev, q, answer:bhfAnswer(q) };
+  }
+  // 题面百分数是否为同一个（保留 1 位小数，用容差比较）
+  function bhfSameQ(a, b){
+    return a !== null && b !== null && Math.abs(a-b) < 0.05;
+  }
+  // 生成一道新题；lastQ 为上一题题面百分数，尽量避免与其相同。
+  // adaptive=true 时按记忆频率加权选源百分数（单题模式）
+  function bhfGenQuestion(lastQ, adaptive){
     const cands = bhfCandidates();
     if(cands){
-      if(cands.length>1 && last !== null){
-        const filtered = cands.filter(p=>p!==last);
-        return filtered[rand(0, filtered.length-1)];
+      let pool = cands;
+      // 未开启互换时方向固定，可直接从池中剔除上一题
+      if(!bhfCfg.swap && pool.length>1 && lastQ !== null){
+        const filtered = pool.filter(p=>!bhfSameQ(p, lastQ));
+        if(filtered.length) pool = filtered;
       }
-      return cands[rand(0, cands.length-1)];
+      // 互换开启时同一源百分数有正反两种题面，随机取向后重试，避免与上一题题面相同
+      for(let k=0;k<4;k++){
+        const p = adaptive ? adaptPick(pool) : pool[rand(0, pool.length-1)];
+        const q = bhfMakeQuestion(p);
+        if(!bhfSameQ(q.q, lastQ) || k===3) return q;
+      }
     }
     const keys = Array.from(bhfCfg.ranges);
-    const key = keys[rand(0, keys.length-1)];
-    const [min, max] = BHF_RANGES[key];
-    let p = rand(min*10+1, max*10-1)/10;   // 开区间：剔除端点值（如 1.0、10.0、20.0、50.0）
-    if(last !== null && Math.abs(p-last)<0.05){
-      for(let k=0;k<3 && Math.abs(p-last)<0.05;k++) p = rand(min*10+1, max*10-1)/10;
+    for(let k=0;k<4;k++){
+      const key = keys[rand(0, keys.length-1)];
+      const [min, max] = BHF_RANGES[key];
+      const p = rand(min*10+1, max*10-1)/10;   // 开区间：剔除端点值（如 1.0、10.0、20.0、50.0）
+      const q = bhfMakeQuestion(p);
+      if(!bhfSameQ(q.q, lastQ) || k===3) return q;
     }
-    return p;
-  }
-  // 单题模式的百分数生成：仅图出题时按记忆频率加权选预设值（剔除上一题），否则走均匀随机（同样避免与上一题相同）
-  function bhfGenPercentAdapt(last){
-    const cands = bhfCandidates();
-    if(!cands) return bhfGenPercent(last);
-    if(cands.length>1 && last !== null){
-      const filtered = cands.filter(p=>p!==last);
-      return adaptPick(filtered);
-    }
-    return adaptPick(cands);
   }
   // 精确答案 = 1/(p/100) = 100/p，保留 1 位小数
   function bhfAnswer(p){
@@ -1646,9 +1661,9 @@
 
   /* ---------- 百化分单题练习 ---------- */
   const bhfSingle = {
-    questions:[], cur:null, last:null, curStart:0, start:0,
+    questions:[], cur:null, lastQ:null, curStart:0, start:0,
     timer:null, autoNextTimer:null,
-    // 错题重复：记下待重做的错题百分数
+    // 错题重复：记下待重做的整道题（含出题方向）
     pending:null,
     // 当前题是否为错题重做（重做不计入出题频率调整）
     isRepeat:false,
@@ -1657,11 +1672,12 @@
 
   function startBHFHandSingle(){
     lastPracticeSource = 'bhf';
-    recordLaunch('bhf', { ranges: [...bhfCfg.ranges], mode: bhfCfg.mode, count: bhfCfg.count, limitPreset: bhfCfg.limitPreset, repeatWrong: bhfCfg.repeatWrong });
+    recordLaunch('bhf', { ranges: [...bhfCfg.ranges], mode: bhfCfg.mode, count: bhfCfg.count, limitPreset: bhfCfg.limitPreset, swap: bhfCfg.swap, repeatWrong: bhfCfg.repeatWrong });
     adaptReset();   // 本次练习的记忆频率从零开始
     const note = $('#bhfPadNote'); if(note) note.textContent = '误差≤' + bhfAllowedErr() + '%';
     bhfSingle.questions = [];
     bhfSingle.pending = null;
+    bhfSingle.lastQ = null;
     bhfSingle.paused = false;   // 重置暂停状态，避免沿用上次练习的累计暂停时长导致计时为负
     bhfSingle.pausedTotal = 0;
     bhfSingle.start = Date.now();
@@ -1714,8 +1730,7 @@
     if(bhfSingle.paused) toggleBHFHandPause();
     if(!isFirst && bhfSingle.cur){
       bhfSingle.questions.push({
-        percent: bhfSingle.cur.percent,
-        answer: bhfSingle.cur.answer,
+        q: bhfSingle.cur.q, answer: bhfSingle.cur.answer,
         user: null, correct: false,
         usedSec: (Date.now()-bhfSingle.curStart)/1000
       });
@@ -1723,16 +1738,16 @@
     clearTimeout(bhfSingle.autoNextTimer);
     bhfSingle.revealing = false;
     if(bhfCfg.ranges.size===0) return;
-    // 若非空待重做错题，则用该百分数重做（不计频率调整）；否则重新随机生成（避免与上一题相同）
+    // 若非空待重做错题，则用原题重做（不计频率调整）；否则重新生成（避免与上一题题面相同）
     const isRepeat = bhfSingle.pending !== null;
-    const p = isRepeat ? (()=>{ const v=bhfSingle.pending; bhfSingle.pending=null; return v; })() : bhfGenPercentAdapt(bhfSingle.last);
-    bhfSingle.last = p;   // 记录本题目（含错题重做），供下一题避免连续重复
+    const cur = isRepeat ? bhfSingle.pending : bhfGenQuestion(bhfSingle.lastQ, true);
+    if(isRepeat) bhfSingle.pending = null;
+    bhfSingle.lastQ = cur.q;   // 记录本题题面，供下一题避免连续重复
     bhfSingle.isRepeat = isRepeat;
-    const ans = bhfAnswer(p);
-    bhfSingle.cur = { percent:p, answer:ans };
+    bhfSingle.cur = cur;
     bhfSingle.curStart = Date.now();
     $('#bhfsIndex').textContent = `第 ${bhfSingle.questions.length+1} 题`;
-    $('#bhfsExpr .bhf-expr-p').textContent = bhfStrip(p)+'%';
+    $('#bhfsExpr .bhf-expr-p').textContent = bhfStrip(cur.q)+'%';
     const inp = $('#bhfsFracInput');
     inp.value = '';
     inp.disabled = false;
@@ -1753,14 +1768,14 @@
     const correct = bhfCheck(user, ans);
     const usedSec = (Date.now()-bhfSingle.curStart)/1000;
     // 仅图出题时更新频率；重做不计；只有零误差（user===ans）才允许降频，判对但带误差权重不变
-    if(bhfCfg.limitPreset && !bhfSingle.isRepeat) adaptUpdate(bhfSingle.cur.percent, correct, usedSec, user === ans);
+    if(bhfCfg.limitPreset && !bhfSingle.isRepeat) adaptUpdate(bhfSingle.cur.p, correct, usedSec, user === ans);
     if(correct){
       flashBHFHandFeedback('ok', `✓ 正确，分母约 ${ans}`);
     }else{
       flashBHFHandFeedback('err', `✗ 错误，精确值 ${ans}，误差 >${bhfAllowedErr()}%`);
-      if(bhfCfg.repeatWrong) bhfSingle.pending = bhfSingle.cur.percent;   // 错题重做
+      if(bhfCfg.repeatWrong) bhfSingle.pending = Object.assign({}, bhfSingle.cur);   // 错题重做（保留原出题方向）
     }
-    bhfSingle.questions.push({ percent:bhfSingle.cur.percent, answer:ans, user, correct, usedSec });
+    bhfSingle.questions.push({ q:bhfSingle.cur.q, answer:ans, user, correct, usedSec });
     bhfSingle.cur = null;
     const inp = $('#bhfsFracInput');
     inp.disabled = true;
@@ -1771,13 +1786,13 @@
   function revealBHFHandSingle(){
     if(!bhfSingle.cur || bhfSingle.paused) return;
     bhfSingle.revealing = true;
-    if(bhfCfg.limitPreset && !bhfSingle.isRepeat) adaptUpdate(bhfSingle.cur.percent, false, (Date.now()-bhfSingle.curStart)/1000, false);   // 查看答案视同答错，提高频率；重做不计
+    if(bhfCfg.limitPreset && !bhfSingle.isRepeat) adaptUpdate(bhfSingle.cur.p, false, (Date.now()-bhfSingle.curStart)/1000, false);   // 查看答案视同答错，提高频率；重做不计
     flashBHFHandFeedback('info', `答案：${bhfSingle.cur.answer}（点击"跳过"继续）`);
     $('#bhfsFracInput').disabled = true;
     $$('.numpad-key', $('#bhfsNumpad')).forEach(k=>k.disabled = true);
-    if(bhfCfg.repeatWrong) bhfSingle.pending = bhfSingle.cur.percent;   // 查看答案视同答错，重做
+    if(bhfCfg.repeatWrong) bhfSingle.pending = Object.assign({}, bhfSingle.cur);   // 查看答案视同答错，重做（保留原出题方向）
     bhfSingle.questions.push({
-      percent: bhfSingle.cur.percent, answer: bhfSingle.cur.answer,
+      q: bhfSingle.cur.q, answer: bhfSingle.cur.answer,
       user: '(查看答案)', correct: false,
       usedSec: (Date.now()-bhfSingle.curStart)/1000
     });
@@ -1791,7 +1806,7 @@
     showSummary({
       type:'百化分练习（单题）',
       questions: bhfSingle.questions.map(q=>({
-        expr: bhfStrip(q.percent)+'% = 1/？', answer: q.answer,
+        expr: bhfStrip(q.q)+'% = 1/？', answer: q.answer,
         displayAnswer: String(q.answer), errorPct: bhfErrPct(q.user, q.answer),
         userText: q.user===null ? '' : String(q.user), correct: q.correct, usedSec: q.usedSec
       })),
@@ -1815,15 +1830,15 @@
 
   function startBHFHandFixed(){
     lastPracticeSource = 'bhf';
-    recordLaunch('bhf', { ranges: [...bhfCfg.ranges], mode: bhfCfg.mode, count: bhfCfg.count, limitPreset: bhfCfg.limitPreset, repeatWrong: bhfCfg.repeatWrong });
+    recordLaunch('bhf', { ranges: [...bhfCfg.ranges], mode: bhfCfg.mode, count: bhfCfg.count, limitPreset: bhfCfg.limitPreset, swap: bhfCfg.swap, repeatWrong: bhfCfg.repeatWrong });
     const n = bhfCfg.count;
     if(bhfCfg.ranges.size===0) return;
     bhfFixed.questions = [];
-    let lastP = null;
+    let lastQ = null;
     for(let i=0;i<n;i++){
-      const p = bhfGenPercent(lastP);   // 内部已避免与上一题相同
-      bhfFixed.questions.push({ percent:p, answer:bhfAnswer(p), userText:'', correct:false, usedSec:0 });
-      lastP = p;
+      const q = bhfGenQuestion(lastQ, false);   // 内部已避免与上一题题面相同
+      bhfFixed.questions.push({ p:q.p, rev:q.rev, q:q.q, answer:q.answer, userText:'', correct:false, usedSec:0 });
+      lastQ = q.q;
     }
     bhfFixed.start = Date.now();
     const list = $('#bhfList');
@@ -1833,7 +1848,7 @@
       item.className = 'fixed-item';
       item.innerHTML = `
         <span class="fi-idx">${i+1}</span>
-        <span class="fi-expr">${bhfStrip(q.percent)}% = 1/</span>
+        <span class="fi-expr">${bhfStrip(q.q)}% = 1/</span>
         <input class="fi-input" inputmode="decimal" autocomplete="off" data-i="${i}" placeholder="分母 ?" />
       `;
       list.appendChild(item);
@@ -1881,7 +1896,7 @@
     showSummary({
       type:'百化分练习（固定题数）',
       questions: bhfFixed.questions.map(q=>({
-        expr: bhfStrip(q.percent)+'% = 1/？', answer: q.answer,
+        expr: bhfStrip(q.q)+'% = 1/？', answer: q.answer,
         displayAnswer: String(q.answer), errorPct: bhfErrPct(q.userText, q.answer),
         userText: q.userText, correct: q.correct, usedSec: q.usedSec
       })),

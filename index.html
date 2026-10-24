@@ -287,10 +287,16 @@
           <div class="cfg-group">
             <div class="cfg-label-row">
               <label class="cfg-label">选择范围（多选）</label>
-              <label class="bhf-limit">
-                <input type="checkbox" id="bhfLimitPreset" />
-                <span>仅从上图百分数中出题</span>
-              </label>
+              <div class="bhf-limit-group">
+                <label class="bhf-limit">
+                  <input type="checkbox" id="bhfLimitPreset" />
+                  <span>仅从上图百分数中出题</span>
+                </label>
+                <label class="bhf-limit">
+                  <input type="checkbox" id="bhfSwap" />
+                  <span>允许互换出题</span>
+                </label>
+              </div>
             </div>
             <div class="square-range-grid" id="bhfRange">
               <button class="chip" data-range="1-10">1%~10%</button>

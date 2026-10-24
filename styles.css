@@ -135,8 +135,9 @@ body{
 .cfg-group{margin-top:16px;}
 .cfg-label{display:block;font-size:13px;color:var(--muted);margin-bottom:8px;font-weight:500;}
 /* 配置标签与勾选框同行 */
-.cfg-label-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px;}
+.cfg-label-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px;flex-wrap:wrap;}
 .cfg-label-row .cfg-label{margin-bottom:0;}
+.bhf-limit-group{display:flex;align-items:center;gap:12px;flex-wrap:wrap;justify-content:flex-end;}
 .bhf-limit{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);cursor:pointer;user-select:none;}
 .bhf-limit input{width:16px;height:16px;margin:0;accent-color:var(--primary);cursor:pointer;}
 /* 错题重复勾选框（整行展示） */
