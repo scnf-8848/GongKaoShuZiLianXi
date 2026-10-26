@@ -289,24 +289,25 @@
         <div class="formula-box" id="fdFormula"></div>
         <!-- 百化分练习配置 -->
         <div id="fdPercentConfig" style="display:none;">
-          <div class="cfg-group">
-            <div class="cfg-label-row">
-              <label class="cfg-label">选择范围（多选）</label>
-              <div class="bhf-limit-group">
-                <label class="bhf-limit">
-                  <input type="checkbox" id="bhfLimitPreset" />
-                  <span>仅从上图百分数中出题</span>
-                </label>
-                <label class="bhf-limit">
-                  <input type="checkbox" id="bhfSwap" />
-                  <span>允许互换出题</span>
-                </label>
+          <div class="bhf-config-grid">
+            <div class="bhf-config-col">
+              <label class="cfg-label" title="范围同时决定：仅图模式下筛选哪些预设配对、挑战模式下随机数的区间">选择范围（多选）</label>
+              <div class="bhf-range-col" id="bhfRange">
+                <button class="chip" data-range="1-10">1%~10%</button>
+                <button class="chip" data-range="10-20">10%~20%</button>
+                <button class="chip" data-range="20-50">20%~50%</button>
               </div>
             </div>
-            <div class="square-range-grid" id="bhfRange">
-              <button class="chip" data-range="1-10">1%~10%</button>
-              <button class="chip" data-range="10-20">10%~20%</button>
-              <button class="chip" data-range="20-50">20%~50%</button>
+            <div class="bhf-config-col">
+              <label class="cfg-label">出题难度：<span id="bhfLevelHint">只出图中配对，允许误差 1%</span></label>
+              <div class="bhf-level-col" id="bhfLevel">
+                <button class="seg active" data-val="basic"
+                  title="基础：只出图中已有的百化分配对，答案都能在图上找到，允许误差 1%">基础 · 仅图</button>
+                <button class="seg" data-val="swap"
+                  title="进阶：在仅图出题基础上，约一半题目反向提问（如 13.3% = 1/？），允许误差 1.5%">进阶 · 仅图+互换</button>
+                <button class="seg" data-val="range"
+                  title="挑战：在所选范围内随机生成百分数，不能靠记图作答，允许误差 2%">挑战 · 范围内随机</button>
+              </div>
             </div>
           </div>
           <div class="cfg-group">
@@ -317,8 +318,8 @@
             </div>
           </div>
           <div class="cfg-group" id="bhfRepeatWrongWrap">
-            <label class="bhf-limit">
-              <input type="checkbox" id="bhfRepeatWrong" />
+            <label class="bhf-limit" title="答错的题会在下一题再次出现，直到答对为止；错题重做不参与出题频率调整">
+              <input type="checkbox" id="bhfRepeatWrong" checked />
               <span>错题重复：答错后在下一题重复，直至答对</span>
             </label>
           </div>
@@ -358,7 +359,7 @@
           </div>
           <div class="cfg-group" id="sqRepeatWrongWrap">
             <label class="bhf-limit">
-              <input type="checkbox" id="sqRepeatWrong" />
+              <input type="checkbox" id="sqRepeatWrong" checked />
               <span>错题重复：答错后在下一题重复，直至答对</span>
             </label>
           </div>

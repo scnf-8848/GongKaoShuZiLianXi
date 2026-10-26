@@ -136,11 +136,28 @@ body{
 /* ============ 配置项 ============ */
 .cfg-group{margin-top:16px;}
 .cfg-label{display:block;font-size:13px;color:var(--muted);margin-bottom:8px;font-weight:500;}
-/* 配置标签与勾选框同行 */
-.cfg-label-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px;flex-wrap:wrap;}
-.cfg-label-row .cfg-label{margin-bottom:0;}
-.bhf-limit-group{display:flex;align-items:center;gap:12px;flex-wrap:wrap;justify-content:flex-end;}
 .bhf-limit{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);cursor:pointer;user-select:none;}
+/* 百化分配置：左列贴左，右列左边缘正好落在卡片中线；
+   每列各占一半宽度，按钮容器限宽 254px 保持按钮不拉长 */
+.bhf-config-grid{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:8px 0;
+  margin:16px 0 0;
+  align-items:start;
+}
+@media(max-width:460px){
+  .bhf-config-grid{grid-template-columns:1fr;max-width:100%;gap:12px;}
+}
+.bhf-config-col{display:flex;flex-direction:column;gap:8px;min-width:0;}
+.bhf-config-col .cfg-label{margin-bottom:0;}
+#bhfLevelHint{color:var(--ink);}
+.bhf-range-col,.bhf-level-col{display:flex;flex-direction:column;gap:8px;max-width:254px;}
+.bhf-range-col .chip,.bhf-level-col .seg{
+  width:100%;box-sizing:border-box;justify-content:center;text-align:center;
+  border-radius:10px;   /* 与同页“题型类别”选项一致，避免同页出现两种圆角 */
+  font-size:13px;padding:8px 10px;line-height:20px;   /* 两侧行高一致，保证逐行对齐 */
+}
 .bhf-limit input{width:16px;height:16px;margin:0;accent-color:var(--primary);cursor:pointer;}
 /* 错题重复勾选框（整行展示） */
 #bhfRepeatWrongWrap label,
@@ -522,17 +539,19 @@ body{
 .ph-icon{font-size:38px;display:block;margin-bottom:6px;}
 .back-btn{margin-bottom:8px;}
 
-/* 平方数范围选择网格 */
+/* 平方数范围选择网格：两行三列，先纵后横（与上方平方表的方向一致）
+   ┌ 1~5   11~15  21~25 ┐
+   └ 6~10  16~20  26~30 ┘ */
 .square-range-grid{
   display:grid;
   grid-template-columns:repeat(3,1fr);
+  grid-template-rows:repeat(2,auto);
+  grid-auto-flow:column;
   gap:6px;
 }
 .square-range-grid .chip{
   text-align:center;
-}
-@media(max-width:480px){
-  .square-range-grid{grid-template-columns:repeat(2,1fr);}
+  border-radius:10px;   /* 与同页“题型类别”选项一致，避免同页出现两种圆角 */
 }
 
 /* 11~30 平方数表 */

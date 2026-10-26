@@ -15,7 +15,7 @@
     '16-20':[16,17,18,19,20], '21-25':[21,22,23,24,25], '26-30':[26,27,28,29,30]
   };
 
-  const squareCfg = { ranges:[], mode:'single', count:5, repeatWrong:false };
+  const squareCfg = { ranges:[], mode:'single', count:5, repeatWrong:true };
 
   function initSquareChips(){
     const wrap = $('#squareRange');
@@ -63,7 +63,7 @@
     squareCfg.ranges = config.ranges.slice();
     squareCfg.mode = config.mode || 'single';
     squareCfg.count = config.count || 5;
-    squareCfg.repeatWrong = !!config.repeatWrong;
+    squareCfg.repeatWrong = config.repeatWrong !== false;
     syncSquareCfgUI();
     if(squareCfg.mode==='single') startSquareSingle();
     else startSquareFixed();

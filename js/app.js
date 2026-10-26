@@ -186,7 +186,7 @@
         launchPractice(st.activeLaunch.source, st.activeLaunch.config);
       }catch(err){
         console.error(err);
-        $('#cfgTip') && ($('#cfgTip').textContent = '启动失败：'+err.message);
+        alert(err && err.message ? err.message : '练习配置失效');
       }
     });
 
