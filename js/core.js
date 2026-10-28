@@ -36,6 +36,16 @@
     return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
   }
 
+  /* 三位有效数字取整：百化分分母统一精度（如 2.8571→2.86、18.1818→18.2）。
+     分母 <10 时自然得到两位小数，≥10 时保留一位小数，误差上界约 0.3%。 */
+  function roundSig3(v){
+    if(!isFinite(v) || v === 0) return v;
+    const e = Math.floor(Math.log10(Math.abs(v)));
+    const u = Math.pow(10, e-2);
+    const r = Math.round(v/u)*u;
+    return Math.round(r*1e6)/1e6;   // 去掉浮点尾差（如 5.880000000000001）
+  }
+
   /* ---------- 共享状态 ----------
      跨模块读写的可变值统一放在这里：原先是各自文件里的 let，拆成多个文件后
      无法靠闭包共享，改成对象属性（引用唯一）才不会出现"各存一份"的错。 */
@@ -130,6 +140,6 @@
 
   /* ---------- 对外暴露 ---------- */
   Object.assign(GK, {
-    $, $$, LS_DRAFT, LS_KEY, bindSegTo, fmtTime, go, initTheme, isTouchDevice, nowStr, onEnter, onViewChange, rand, registerStarter, registerStop, registry, st, tuneInput
+    $, $$, LS_DRAFT, LS_KEY, bindSegTo, fmtTime, go, initTheme, isTouchDevice, nowStr, onEnter, onViewChange, rand, registerStarter, registerStop, registry, roundSig3, st, tuneInput
   });
 })(window.GK = window.GK || {});

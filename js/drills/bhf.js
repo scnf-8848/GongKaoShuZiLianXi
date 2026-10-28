@@ -6,12 +6,12 @@
 
   // 依赖（由前面加载的模块暴露到 GK）
   const {
-    $, $$, BHF_PRESET_ALL, adaptPick, adaptReset, adaptUpdate, bindSegTo, closeBHFChart, createFixedTimer, createSingleDrill, go, isTouchDevice, nowStr, rand, recordLaunch, registerStarter, registerStop, scheduleDraft, showSummary, st, tuneInput
+    $, $$, BHF_PRESET_ALL, adaptPick, adaptReset, adaptUpdate, bindSegTo, closeBHFChart, createFixedTimer, createSingleDrill, go, isTouchDevice, nowStr, rand, recordLaunch, registerStarter, registerStop, roundSig3, scheduleDraft, showSummary, st, tuneInput
   } = GK;
 
   /* ---------- 百化分练习 ----------
      在选中范围内随机生成最多 1 位小数的百分数 p，
-     用户回答对应分数 1/(100/p) 的分母，精确答案保留 1 位小数。
+     用户回答对应分数 1/(100/p) 的分母，分母统一保留 3 位有效数字。
      出题难度三档（由低到高）：
        basic：仅从图中预设配出题，容差 1%
        swap ：仅图 + 约一半题目正反互换，容差 1.5%
@@ -117,9 +117,9 @@
       if(!bhfSameQ(q.q, lastQ) || k===3) return q;
     }
   }
-  // 精确答案 = 1/(p/100) = 100/p，保留 1 位小数
+  // 标准答案 = 1/(p/100) = 100/p，分母统一保留 3 位有效数字（与 U 型图标签一致）
   function bhfAnswer(p){
-    const v = Math.round(1000/p)/10;   // 保留 1 位
+    const v = roundSig3(100/p);
     return Math.round(v)===v ? Math.round(v) : v;
   }
   // 数值显示：去掉整数部分的尾随 .0（如 10.0 → 10）
@@ -142,11 +142,11 @@
     if(pct < 0.01) return '<0.01%';
     return pct.toFixed(1)+'%';
   }
-  // 输入清洗：仅保留数字与一个小数点，且最多一位小数
+  // 输入清洗：仅保留数字与一个小数点，且最多两位小数（分母为 3 位有效数字，如 4.35）
   function bhfSanitize(v){
     v = v.replace(/[^\d.]/g,'').replace(/(\..*)\./g,'$1');
     const di = v.indexOf('.');
-    if(di >= 0) v = v.slice(0, di+2);
+    if(di >= 0) v = v.slice(0, di+3);
     return v;
   }
 
@@ -379,7 +379,7 @@
     const inp = e.target.closest('.fi-input'); if(!inp) return;
     const i = +inp.dataset.i;
     const item = inp.closest('.fixed-item');
-    // 与单题模式保持一致：仅允许数字与一位小数
+    // 与单题模式保持一致：仅允许数字与最多两位小数
     const clean = bhfSanitize(inp.value);
     if(clean !== inp.value) inp.value = clean;
     const val = inp.value.trim();

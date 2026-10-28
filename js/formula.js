@@ -6,7 +6,7 @@
 
   // 依赖（由前面加载的模块暴露到 GK）
   const {
-    $, go, onViewChange
+    $, go, onViewChange, roundSig3
   } = GK;
 
   /* ---------- 公式计算（KaTeX 数学公式渲染） ---------- */
@@ -99,8 +99,8 @@
 
     // 数值显示：去掉多余的尾随零（如 6.25 → "6.25"，10 → "10"）
     function strip(v){ v=Math.round(v*100)/100; return String(v); }
-    // 分数换算：1/(100/p)，保留 1 位小数（如 7.7%→1/13，13%→1/7.7）
-    function denom(p){ const n=Math.round(1000/p)/10; return Math.round(n)===n ? String(Math.round(n)) : strip(n); }
+    // 分数换算：1/(100/p)，分母统一保留 3 位有效数字（23%→1/4.35、7.7%→1/13.3）
+    function denom(p){ return strip(roundSig3(100/p)); }
     function fracStr(p){ return '1/'+denom(p); }
 
     // 渲染一个锚点：圆点 + 百分数（外侧）+ 分数（内侧）；半圆弧为「分数在上、百分数在下」
@@ -184,8 +184,7 @@
     }
     function sync2(mx, my, l, ok){
       const p=pAt(l);
-      const den=100/p;
-      const text=`${fmt(p)}% = 1/${fmt(Math.round(den*10)/10)}`;
+      const text=`${fmt(p)}% = 1/${denom(p)}`;
       const er=el.getBoundingClientRect();
       tip.textContent=text;
       tip.style.left=(mx-er.left+12)+'px';
